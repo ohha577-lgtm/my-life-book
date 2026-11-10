@@ -43,7 +43,7 @@
   }
   nav button {
     flex: 1; border: 0; background: none; padding: 10px 0 12px;
-    font-size: 13px; color: var(--sub); cursor: pointer; padding-left: 0; padding-right: 0;
+    font-size: 12px; color: var(--sub); cursor: pointer; padding-left: 0; padding-right: 0;
   }
   nav button .ico { display: block; font-size: 24px; }
   nav button.on { color: var(--main); font-weight: bold; }
@@ -138,6 +138,30 @@
   .small-btn {
     border: 1px solid var(--line); background: #fff; border-radius: 10px;
     padding: 8px 12px; font-size: 15px; cursor: pointer; margin-top: 10px;
+  }
+
+  /* ---------- 🏃 운동 화면 ---------- */
+  /* 한 줄: "자전거 [ 30 ]분 [ 10 ]km" */
+  .ex-row {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+    padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 20px;
+  }
+  .ex-row:last-of-type { border-bottom: 0; }
+  .ex-name { width: 96px; font-weight: bold; flex: none; white-space: nowrap; }
+  /* 휴대폰처럼 좁은 화면에서는 운동 이름을 한 줄 위에 써요 */
+  @media (max-width: 440px) { .ex-name { width: 100%; } }
+  .ex-unit { font-size: 18px; color: var(--sub); margin-right: 4px; }
+  /* 입력칸: 테두리가 둥근 직사각형, 큰 글씨, 가운데 정렬 */
+  input.ex-in {
+    width: 84px; flex: none; text-align: center;
+    font-size: 22px; font-weight: bold; padding: 10px 6px;
+    border: 2px solid #b9c6dc; border-radius: 14px; background: #f8faff;
+  }
+  input.ex-in::placeholder { color: #c9d1de; font-weight: normal; }
+  input.ex-in:focus { outline: none; border-color: var(--main); background: #fff; }
+  .ex-chip {
+    display: inline-block; background: var(--bg); border-radius: 8px;
+    padding: 2px 8px; margin: 3px 4px 0 0; font-size: 16px;
   }
 </style>
 </head>
@@ -325,6 +349,48 @@
     </div>
   </section>
 
+  <!-- ======================================================
+       ⑥ 운동 화면
+       ====================================================== -->
+  <section id="page-ex" hidden>
+    <div class="card">
+      <h2>✏️ 오늘 운동 적기</h2>
+      <label>날짜</label>
+      <input type="date" id="e-date" onchange="fillExercise()">
+
+      <div class="ex-row">
+        <span class="ex-name">🚴 자전거</span>
+        <input class="ex-in" type="number" id="e-bike-min" inputmode="numeric" placeholder="0"><span class="ex-unit">분</span>
+        <input class="ex-in" type="number" id="e-bike-km" inputmode="decimal" step="any" placeholder="0"><span class="ex-unit">km</span>
+      </div>
+      <div class="ex-row">
+        <span class="ex-name">✊ 악력기</span>
+        <input class="ex-in" type="number" id="e-grip" inputmode="numeric" placeholder="0"><span class="ex-unit">회</span>
+      </div>
+      <div class="ex-row">
+        <span class="ex-name">🏓 탁구</span>
+        <input class="ex-in" type="number" id="e-pp-min" inputmode="numeric" placeholder="0"><span class="ex-unit">분</span>
+      </div>
+
+      <button class="big-btn" onclick="addExercise()">저장하기</button>
+      <p class="note">한 운동만 해도 그것만 적으면 돼요. 같은 날짜를 고르면 그날 적은 숫자가 칸에 나와서 고칠 수 있어요.</p>
+    </div>
+
+    <div class="card">
+      <div class="month-bar">
+        <button onclick="moveExMonth(-1)">◀</button>
+        <span class="m" id="e-month"></span>
+        <button onclick="moveExMonth(1)">▶</button>
+      </div>
+      <div class="sum" id="e-sum"></div>
+    </div>
+
+    <div class="card">
+      <h2>📋 운동 기록</h2>
+      <div id="e-list"></div>
+    </div>
+  </section>
+
   <section id="page-set" hidden>
     <div class="card">
       <h2>👤 내 계정</h2>
@@ -350,6 +416,7 @@
   <button id="tab-bp" onclick="showPage('bp')"><span class="ico">❤️</span>혈압</button>
   <button id="tab-weight" onclick="showPage('weight')"><span class="ico">⚖️</span>몸무게</button>
   <button id="tab-stock" onclick="showPage('stock')"><span class="ico">📊</span>주식</button>
+  <button id="tab-ex" onclick="showPage('ex')"><span class="ico">🏃</span>운동</button>
   <button id="tab-set" onclick="showPage('set')"><span class="ico">⚙️</span>설정</button>
 </nav>
 
@@ -395,8 +462,8 @@ const db = initializeFirestore(app, {
 });
 
 // 지금 화면에 보여줄 기록 (파이어베이스에서 받아와서 채워요)
-const KINDS = ["money", "plans", "bp", "weight", "stocks"];   // 기록 종류 5가지
-let data = { money: [], plans: [], bp: [], weight: [], stocks: [] };
+const KINDS = ["money", "plans", "bp", "weight", "stocks", "exercise"];   // 기록 종류 6가지
+let data = { money: [], plans: [], bp: [], weight: [], stocks: [], exercise: [] };
 let me = null;            // 로그인한 사람
 let stopListen = [];      // 기록 받아오기 멈추는 스위치들
 
@@ -430,7 +497,7 @@ onAuthStateChanged(auth, (user) => {
   me = user;
   if (!user) {
     $("login-screen").hidden = false;
-    data = { money: [], plans: [], bp: [], weight: [], stocks: [] };
+    data = { money: [], plans: [], bp: [], weight: [], stocks: [], exercise: [] };
     return;
   }
   $("login-screen").hidden = true;
@@ -478,7 +545,7 @@ function safe(t) {
 
 // ---------- 5. 탭 바꾸기 ----------
 window.showPage = function (name) {
-  ["money", "plan", "bp", "weight", "stock", "set"].forEach((p) => {
+  ["money", "plan", "bp", "weight", "stock", "ex", "set"].forEach((p) => {
     $("page-" + p).hidden = (p !== name);
     $("tab-" + p).classList.toggle("on", p === name);
   });
@@ -864,6 +931,89 @@ function drawStock() {
 }
 
 /* ============================================================
+   🏃 운동 (자전거 · 악력기 · 탁구)
+   ------------------------------------------------------------
+   하루에 기록 1개! 날짜가 이름표라서 같은 날은 하나로 합쳐져요.
+   ============================================================ */
+let exMonth = todayStr().slice(0, 7);   // 지금 보고 있는 달
+
+// 칸에 적힌 숫자 읽기 (비어 있으면 null)
+const exVal = (id) => $(id).value === "" ? null : Number($(id).value);
+
+window.addExercise = function () {
+  const date = $("e-date").value || todayStr();
+  const rec = {
+    date,
+    bikeMin: exVal("e-bike-min"),
+    bikeKm:  exVal("e-bike-km"),
+    grip:    exVal("e-grip"),
+    ppMin:   exVal("e-pp-min")
+  };
+  if (rec.bikeMin == null && rec.bikeKm == null && rec.grip == null && rec.ppMin == null) {
+    alert("운동한 숫자를 하나 이상 적어 주세요."); return;
+  }
+  setDoc(doc(box("exercise"), date), rec)
+    .then(() => alert(niceDate(date) + " 운동 기록을 저장했어요 💪"))
+    .catch(saveFail);
+  exMonth = date.slice(0, 7);
+};
+
+// 날짜를 고르면 → 그날 적어 둔 숫자를 칸에 채워 줘요 (없으면 빈칸)
+window.fillExercise = function () {
+  const r = data.exercise.find((x) => x.date === $("e-date").value) || {};
+  $("e-bike-min").value = r.bikeMin ?? "";
+  $("e-bike-km").value  = r.bikeKm ?? "";
+  $("e-grip").value     = r.grip ?? "";
+  $("e-pp-min").value   = r.ppMin ?? "";
+};
+
+window.moveExMonth = function (step) {
+  const [y, m] = exMonth.split("-").map(Number);
+  const d = new Date(y, m - 1 + step, 1);
+  exMonth = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+  drawExercise();
+};
+
+function drawExercise() {
+  const [y, m] = exMonth.split("-");
+  $("e-month").textContent = y + "년 " + Number(m) + "월";
+  const list = data.exercise.filter((r) => r.date.startsWith(exMonth))
+                            .sort((a, b) => b.date.localeCompare(a.date));
+
+  // 이 달 합계
+  const add = (k) => list.reduce((n, r) => n + (Number(r[k]) || 0), 0);
+  $("e-sum").innerHTML = `
+    <div><div class="t">운동한 날</div><div class="n">${list.length}일</div></div>
+    <div><div class="t">🚴 자전거</div><div class="n">${numStr(add("bikeMin"), 0)}분</div>
+         <div class="t">${numStr(add("bikeKm"), 1)}km</div></div>
+    <div><div class="t">✊ 악력기</div><div class="n">${numStr(add("grip"), 0)}회</div></div>
+    <div><div class="t">🏓 탁구</div><div class="n">${numStr(add("ppMin"), 0)}분</div></div>`;
+
+  // 날짜별 기록
+  $("e-list").innerHTML = list.length ? list.map((r) => {
+    const chips = [];
+    if (r.bikeMin != null || r.bikeKm != null) {
+      chips.push("🚴 " + [r.bikeMin != null ? numStr(r.bikeMin, 0) + "분" : "", r.bikeKm != null ? numStr(r.bikeKm, 1) + "km" : ""].filter(Boolean).join(" · "));
+    }
+    if (r.grip != null)  chips.push("✊ " + numStr(r.grip, 0) + "회");
+    if (r.ppMin != null) chips.push("🏓 " + numStr(r.ppMin, 0) + "분");
+    return `
+    <div class="list-item">
+      <div class="main-txt">
+        <div class="small">${niceDate(r.date)}</div>
+        <div>${chips.map((c) => `<span class="ex-chip">${c}</span>`).join("")}</div>
+      </div>
+      <button class="del" onclick="delItem('exercise','${r.id}')">지우기</button>
+    </div>`;
+  }).join("") : `<div class="empty">이 달에는 운동 기록이 없어요 🙂</div>`;
+
+  // 오늘 칸이 비어 있으면, 오늘 이미 적은 숫자를 채워 두기
+  if ($("e-date").value && !$("e-bike-min").value && !$("e-bike-km").value && !$("e-grip").value && !$("e-pp-min").value) {
+    fillExercise();
+  }
+}
+
+/* ============================================================
    🗑️ 지우기
    ============================================================ */
 window.delItem = function (kind, id) {
@@ -895,6 +1045,7 @@ window.loadBackup = function (input) {
       if (!Array.isArray(d.money) || !Array.isArray(d.plans) || !Array.isArray(d.bp)) throw 0;
       d.weight = Array.isArray(d.weight) ? d.weight : [];
       d.stocks = Array.isArray(d.stocks) ? d.stocks : [];
+      d.exercise = Array.isArray(d.exercise) ? d.exercise : [];
       const total = KINDS.reduce((n, k) => n + d[k].length, 0);
       if (!confirm(`백업 파일의 기록 ${total}개를 내 기록에 더할까요?\n(같은 기록은 겹치지 않아요)`)) return;
       // 한 번에 400개씩 나눠서 올리기
@@ -918,7 +1069,7 @@ window.loadBackup = function (input) {
 /* ============================================================
    ▶️ 처음 켰을 때
    ============================================================ */
-function drawAll() { drawMoney(); drawPlans(); drawBP(); drawWeight(); drawStock(); }
+function drawAll() { drawMoney(); drawPlans(); drawBP(); drawWeight(); drawStock(); drawExercise(); }
 
 $("m-date").value = todayStr();
 $("p-date").value = todayStr();
@@ -926,6 +1077,7 @@ $("b-date").value = todayStr();
 $("b-time").value = nowTime();
 $("w-date").value = todayStr();
 $("s-date").value = todayStr();
+$("e-date").value = todayStr();
 makeStockInputs();
 setMoneyType("out");
 drawAll();
