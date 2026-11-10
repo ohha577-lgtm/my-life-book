@@ -43,9 +43,9 @@
   }
   nav button {
     flex: 1; border: 0; background: none; padding: 10px 0 12px;
-    font-size: 15px; color: var(--sub); cursor: pointer;
+    font-size: 13px; color: var(--sub); cursor: pointer; padding-left: 0; padding-right: 0;
   }
-  nav button .ico { display: block; font-size: 26px; }
+  nav button .ico { display: block; font-size: 24px; }
   nav button.on { color: var(--main); font-weight: bold; }
 
   /* ---------- 3. 카드(하얀 상자) ---------- */
@@ -129,6 +129,16 @@
   #login-screen[hidden] { display: none; }
   #login-screen .card { max-width: 420px; width: 100%; text-align: center; padding: 28px 22px; }
   #login-screen .logo { font-size: 56px; }
+  /* 주식 입력칸 2줄씩 */
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
+  .stock-box { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 14px; font-size: 15px; margin-top: 6px; }
+  .stock-box span { color: var(--sub); }
+  .total-line { font-size: 20px; font-weight: bold; }
+  .up { color: var(--red); } .down { color: var(--main); }
+  .small-btn {
+    border: 1px solid var(--line); background: #fff; border-radius: 10px;
+    padding: 8px 12px; font-size: 15px; cursor: pointer; margin-top: 10px;
+  }
 </style>
 </head>
 <body>
@@ -264,6 +274,54 @@
   <!-- ======================================================
        ④ 설정(백업) 화면
        ====================================================== -->
+  <!-- ======================================================
+       ④ 몸무게 화면
+       ====================================================== -->
+  <section id="page-weight" hidden>
+    <div class="card">
+      <h2>✏️ 몸무게 적기</h2>
+      <div class="row">
+        <div><label>날짜</label><input type="date" id="w-date"></div>
+        <div><label>몸무게 (kg)</label><input type="number" id="w-kg" inputmode="decimal" step="0.1" placeholder="예: 68.5"></div>
+      </div>
+      <button class="big-btn" onclick="addWeight()">저장하기</button>
+      <p class="note">같은 날짜에 다시 적으면 새 숫자로 바뀌어요.</p>
+    </div>
+    <div class="card">
+      <h2>📈 몸무게 그래프</h2>
+      <canvas id="w-chart" width="680" height="220"></canvas>
+      <div class="note">최근 30번 기록</div>
+    </div>
+    <div class="card">
+      <h2>📋 몸무게 기록</h2>
+      <div id="w-list"></div>
+    </div>
+  </section>
+
+  <!-- ======================================================
+       ⑤ 주식 화면
+       ====================================================== -->
+  <section id="page-stock" hidden>
+    <div class="card">
+      <h2>✏️ 주식 금액 적기</h2>
+      <label>날짜</label>
+      <input type="date" id="s-date">
+      <div class="grid2" id="s-inputs"></div>
+      <button class="small-btn" onclick="fillLastStock()">↩️ 지난번 숫자 불러오기</button>
+      <button class="big-btn" onclick="addStock()">저장하기</button>
+      <p class="note">같은 날짜에 다시 적으면 새 숫자로 바뀌어요.</p>
+    </div>
+    <div class="card">
+      <h2>📈 총액 그래프</h2>
+      <canvas id="s-chart" width="680" height="220"></canvas>
+      <div class="note">최근 30번 기록</div>
+    </div>
+    <div class="card">
+      <h2>📋 주식 기록</h2>
+      <div id="s-list"></div>
+    </div>
+  </section>
+
   <section id="page-set" hidden>
     <div class="card">
       <h2>👤 내 계정</h2>
@@ -287,6 +345,8 @@
   <button id="tab-money" class="on" onclick="showPage('money')"><span class="ico">💰</span>가계부</button>
   <button id="tab-plan" onclick="showPage('plan')"><span class="ico">📅</span>일정</button>
   <button id="tab-bp" onclick="showPage('bp')"><span class="ico">❤️</span>혈압</button>
+  <button id="tab-weight" onclick="showPage('weight')"><span class="ico">⚖️</span>몸무게</button>
+  <button id="tab-stock" onclick="showPage('stock')"><span class="ico">📊</span>주식</button>
   <button id="tab-set" onclick="showPage('set')"><span class="ico">⚙️</span>설정</button>
 </nav>
 
@@ -332,7 +392,8 @@ const db = initializeFirestore(app, {
 });
 
 // 지금 화면에 보여줄 기록 (파이어베이스에서 받아와서 채워요)
-let data = { money: [], plans: [], bp: [] };
+const KINDS = ["money", "plans", "bp", "weight", "stocks"];   // 기록 종류 5가지
+let data = { money: [], plans: [], bp: [], weight: [], stocks: [] };
 let me = null;            // 로그인한 사람
 let stopListen = [];      // 기록 받아오기 멈추는 스위치들
 
@@ -366,7 +427,7 @@ onAuthStateChanged(auth, (user) => {
   me = user;
   if (!user) {
     $("login-screen").hidden = false;
-    data = { money: [], plans: [], bp: [] };
+    data = { money: [], plans: [], bp: [], weight: [], stocks: [] };
     return;
   }
   $("login-screen").hidden = true;
@@ -374,7 +435,7 @@ onAuthStateChanged(auth, (user) => {
 
   // 가계부·일정·혈압 기록을 "실시간으로" 받아오기
   // → 휴대폰에서 적으면 탭에도 바로 나타나요!
-  ["money", "plans", "bp"].forEach((kind) => {
+  KINDS.forEach((kind) => {
     const stop = onSnapshot(box(kind), (snap) => {
       data[kind] = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       drawAll();
@@ -414,11 +475,13 @@ function safe(t) {
 
 // ---------- 5. 탭 바꾸기 ----------
 window.showPage = function (name) {
-  ["money", "plan", "bp", "set"].forEach((p) => {
+  ["money", "plan", "bp", "weight", "stock", "set"].forEach((p) => {
     $("page-" + p).hidden = (p !== name);
     $("tab-" + p).classList.toggle("on", p === name);
   });
   if (name === "bp") drawChart();
+  if (name === "weight") drawWeight();
+  if (name === "stock") drawStock();
   window.scrollTo(0, 0);
 };
 
@@ -574,9 +637,9 @@ function drawChart() {
   const cv = $("bp-chart");
   if (!cv || $("page-bp").hidden) return;
   const ctx = cv.getContext("2d");
-  const W = cv.width, H = cv.height, padL = 40, padR = 12, padT = 12, padB = 28;
+  const W = cv.width, H = cv.height, padL = 52, padR = 12, padT = 14, padB = 34;
   ctx.clearRect(0, 0, W, H);
-  ctx.font = "14px sans-serif";
+  ctx.font = "22px sans-serif";
   const pts = sortedBP().slice(0, 14).reverse();
   if (pts.length < 2) {
     ctx.fillStyle = "#888"; ctx.textAlign = "center";
@@ -589,7 +652,7 @@ function drawChart() {
   [60, 80, 100, 120, 140, 160, 180].forEach((v) => {
     ctx.strokeStyle = (v === 140) ? "#f3b4b4" : "#eee"; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(padL, y(v)); ctx.lineTo(W - padR, y(v)); ctx.stroke();
-    ctx.fillStyle = "#999"; ctx.textAlign = "right"; ctx.fillText(v, padL - 6, y(v) + 4);
+    ctx.fillStyle = "#999"; ctx.textAlign = "right"; ctx.fillText(v, padL - 8, y(v) + 7);
   });
   function line(key, color) {
     ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.beginPath();
@@ -602,6 +665,145 @@ function drawChart() {
   ctx.fillStyle = "#888";
   ctx.textAlign = "left";  ctx.fillText(pts[0].date.slice(5).replace("-", "/"), padL, H - 6);
   ctx.textAlign = "right"; ctx.fillText(pts[pts.length - 1].date.slice(5).replace("-", "/"), W - padR, H - 6);
+}
+
+/* ============================================================
+   📉 선 그래프 그리는 공용 도구 (몸무게·주식에서 같이 써요)
+   ============================================================ */
+function drawLineChart(canvasId, pts, valueKey, color) {
+  const cv = $(canvasId);
+  if (!cv || cv.closest("section").hidden) return;
+  const ctx = cv.getContext("2d");
+  const W = cv.width, H = cv.height, padL = 110, padR = 14, padT = 16, padB = 34;
+  ctx.clearRect(0, 0, W, H);
+  ctx.font = "22px sans-serif";
+  if (pts.length < 2) {
+    ctx.fillStyle = "#888"; ctx.textAlign = "center";
+    ctx.fillText("기록이 2개 이상 있으면 그래프가 나와요", W / 2, H / 2);
+    return;
+  }
+  const vals = pts.map((p) => Number(p[valueKey]) || 0);
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  if (hi === lo) { hi += 1; lo -= 1; }
+  const gap = (hi - lo) * 0.15; lo -= gap; hi += gap;
+  const x = (i) => padL + (W - padL - padR) * (i / (pts.length - 1));
+  const y = (v) => padT + (H - padT - padB) * (1 - (v - lo) / (hi - lo));
+  for (let i = 0; i <= 4; i++) {
+    const v = lo + (hi - lo) * i / 4;
+    ctx.strokeStyle = "#eee"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(padL, y(v)); ctx.lineTo(W - padR, y(v)); ctx.stroke();
+    ctx.fillStyle = "#999"; ctx.textAlign = "right"; ctx.fillText(numStr(v, (hi - lo) > 50 ? 0 : 1), padL - 8, y(v) + 7);
+  }
+  ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.beginPath();
+  vals.forEach((v, i) => (i ? ctx.lineTo(x(i), y(v)) : ctx.moveTo(x(i), y(v))));
+  ctx.stroke(); ctx.fillStyle = color;
+  vals.forEach((v, i) => { ctx.beginPath(); ctx.arc(x(i), y(v), 4, 0, Math.PI * 2); ctx.fill(); });
+  ctx.fillStyle = "#888";
+  ctx.textAlign = "left";  ctx.fillText(pts[0].date.slice(5).replace("-", "/"), padL, H - 6);
+  ctx.textAlign = "right"; ctx.fillText(pts[pts.length - 1].date.slice(5).replace("-", "/"), W - padR, H - 6);
+}
+// 숫자를 "1,234.5" 모양으로 (소수점은 최대 dp자리)
+function numStr(n, dp = 2) {
+  return Number(n).toLocaleString("ko-KR", { maximumFractionDigits: dp });
+}
+// 지난번과 비교해서 ▲ ▼ 표시
+function diffStr(now, before, dp = 2, unit = "") {
+  if (before == null) return "";
+  const d = now - before;
+  if (Math.abs(d) < 1e-9) return ` <span class="small">(변화 없음)</span>`;
+  return ` <span class="${d > 0 ? "up" : "down"}">${d > 0 ? "▲" : "▼"} ${numStr(Math.abs(d), dp)}${unit}</span>`;
+}
+
+/* ============================================================
+   ⚖️ 몸무게
+   ============================================================ */
+window.addWeight = function () {
+  const kg = Number($("w-kg").value);
+  if (!kg || kg <= 0) { alert("몸무게를 적어 주세요."); return; }
+  const date = $("w-date").value || todayStr();
+  // 날짜를 이름표로 써서, 같은 날은 하나만 남아요
+  setDoc(doc(box("weight"), date), { date, kg }).catch(saveFail);
+  $("w-kg").value = "";
+};
+
+function drawWeight() {
+  const list = [...data.weight].sort((a, b) => b.date.localeCompare(a.date));
+  $("w-list").innerHTML = list.length ? list.slice(0, 60).map((r, i) => `
+    <div class="list-item">
+      <div class="main-txt">
+        <div><b style="font-size:20px">${numStr(r.kg, 1)} kg</b>${diffStr(r.kg, list[i + 1]?.kg, 1, "kg")}</div>
+        <div class="small">${niceDate(r.date)}</div>
+      </div>
+      <button class="del" onclick="delItem('weight','${r.id}')">지우기</button>
+    </div>`).join("") : `<div class="empty">아직 몸무게 기록이 없어요 🙂</div>`;
+  drawLineChart("w-chart", list.slice(0, 30).reverse(), "kg", "#1f9d55");
+}
+
+/* ============================================================
+   📊 주식
+   ============================================================ */
+// 종목 목록 (순서대로 화면에 나와요). 바꾸고 싶으면 여기만 고치면 돼요.
+const STOCKS = [
+  ["rivian",   "리비안"],
+  ["jepi",     "제피"],
+  ["qqq",      "큐큐큐"],
+  ["spy",      "스파이"],
+  ["unity",    "유닛소프트"],
+  ["yieldmax", "일드믹스"]
+];
+
+function makeStockInputs() {
+  let html = STOCKS.map(([key, name]) =>
+    `<div><label>${name}</label><input type="number" id="s-${key}" inputmode="decimal" step="any"></div>`
+  ).join("");
+  html += `<div><label>환율</label><input type="number" id="s-fx" inputmode="decimal" step="any" placeholder="예: 1380"></div>`;
+  html += `<div><label><b>총액</b></label><input type="number" id="s-total" inputmode="decimal" step="any"></div>`;
+  $("s-inputs").innerHTML = html;
+}
+// 가장 최근 기록의 숫자를 칸에 채워 넣기
+window.fillLastStock = function () {
+  const last = [...data.stocks].sort((a, b) => b.date.localeCompare(a.date))[0];
+  if (!last) { alert("아직 지난 기록이 없어요."); return; }
+  STOCKS.forEach(([key]) => $("s-" + key).value = last[key] ?? "");
+  $("s-fx").value = last.fx ?? "";
+  $("s-total").value = last.total ?? "";
+};
+
+window.addStock = function () {
+  const date = $("s-date").value || todayStr();
+  const rec = { date };
+  let any = false;
+  STOCKS.forEach(([key]) => {
+    const v = $("s-" + key).value;
+    rec[key] = v === "" ? null : Number(v);
+    if (v !== "") any = true;
+  });
+  const fx = $("s-fx").value, total = $("s-total").value;
+  rec.fx = fx === "" ? null : Number(fx);
+  rec.total = total === "" ? null : Number(total);
+  if (!any && rec.total == null) { alert("금액을 하나 이상 적어 주세요."); return; }
+  if (data.stocks.some((r) => r.date === date) && !confirm(niceDate(date) + " 기록이 이미 있어요. 새 숫자로 바꿀까요?")) return;
+  setDoc(doc(box("stocks"), date), rec).catch(saveFail);
+  STOCKS.forEach(([key]) => $("s-" + key).value = "");
+  $("s-fx").value = ""; $("s-total").value = "";
+};
+
+function drawStock() {
+  const list = [...data.stocks].sort((a, b) => b.date.localeCompare(a.date));
+  $("s-list").innerHTML = list.length ? list.slice(0, 60).map((r, i) => {
+    const items = STOCKS.map(([key, name]) =>
+      `<div><span>${name}</span> ${r[key] == null ? "-" : numStr(r[key])}</div>`).join("");
+    return `
+    <div class="list-item" style="align-items:flex-start">
+      <div class="main-txt">
+        <div class="small">${niceDate(r.date)}</div>
+        <div class="total-line">총액 ${r.total == null ? "-" : numStr(r.total)}${r.total == null ? "" : diffStr(r.total, list[i + 1]?.total)}</div>
+        <div class="stock-box">${items}<div><span>환율</span> ${r.fx == null ? "-" : numStr(r.fx)}</div></div>
+      </div>
+      <button class="del" onclick="delItem('stocks','${r.id}')">지우기</button>
+    </div>`;
+  }).join("") : `<div class="empty">아직 주식 기록이 없어요 🙂</div>`;
+  drawLineChart("s-chart", list.filter((r) => r.total != null).slice(0, 30).reverse(), "total", "#7b4bd1");
 }
 
 /* ============================================================
@@ -618,7 +820,7 @@ window.delItem = function (kind, id) {
    ============================================================ */
 window.saveBackup = function () {
   const clean = {};
-  ["money", "plans", "bp"].forEach((k) => clean[k] = data[k]);
+  KINDS.forEach((k) => clean[k] = data[k]);
   const blob = new Blob([JSON.stringify(clean, null, 2)], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
@@ -634,11 +836,13 @@ window.loadBackup = function (input) {
     try {
       const d = JSON.parse(reader.result);
       if (!Array.isArray(d.money) || !Array.isArray(d.plans) || !Array.isArray(d.bp)) throw 0;
-      const total = d.money.length + d.plans.length + d.bp.length;
+      d.weight = Array.isArray(d.weight) ? d.weight : [];
+      d.stocks = Array.isArray(d.stocks) ? d.stocks : [];
+      const total = KINDS.reduce((n, k) => n + d[k].length, 0);
       if (!confirm(`백업 파일의 기록 ${total}개를 내 기록에 더할까요?\n(같은 기록은 겹치지 않아요)`)) return;
       // 한 번에 400개씩 나눠서 올리기
       const all = [];
-      ["money", "plans", "bp"].forEach((k) => d[k].forEach((r) => all.push([k, r])));
+      KINDS.forEach((k) => d[k].forEach((r) => all.push([k, r])));
       for (let i = 0; i < all.length; i += 400) {
         const batch = writeBatch(db);
         all.slice(i, i + 400).forEach(([k, r]) => {
@@ -657,12 +861,15 @@ window.loadBackup = function (input) {
 /* ============================================================
    ▶️ 처음 켰을 때
    ============================================================ */
-function drawAll() { drawMoney(); drawPlans(); drawBP(); }
+function drawAll() { drawMoney(); drawPlans(); drawBP(); drawWeight(); drawStock(); }
 
 $("m-date").value = todayStr();
 $("p-date").value = todayStr();
 $("b-date").value = todayStr();
 $("b-time").value = nowTime();
+$("w-date").value = todayStr();
+$("s-date").value = todayStr();
+makeStockInputs();
 setMoneyType("out");
 drawAll();
 </script>
