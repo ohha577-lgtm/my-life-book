@@ -159,7 +159,7 @@
   <!-- ======================================================
        ① 가계부 화면
        ====================================================== -->
-  <section id="page-money">
+  <section id="page-money" hidden>
     <div class="card">
       <h2>✏️ 돈 쓴 것 / 들어온 것 적기</h2>
       <div class="toggle">
@@ -203,26 +203,29 @@
   <!-- ======================================================
        ② 일정 화면
        ====================================================== -->
-  <section id="page-plan" hidden>
-    <div class="card">
-      <h2>✏️ 할 일 / 약속 적기</h2>
+  <section id="page-plan">
+    <div class="card" id="plan-form">
+      <h2 id="p-title">✏️ 할 일 / 약속 적기</h2>
       <div class="row">
         <div><label>날짜</label><input type="date" id="p-date"></div>
         <div><label>시간 (안 써도 돼요)</label><input type="time" id="p-time"></div>
       </div>
       <label>내용</label>
       <input type="text" id="p-text" placeholder="예: 교육청 회의, 병원 예약">
-      <button class="big-btn" onclick="addPlan()">저장하기</button>
+      <button class="big-btn" id="p-save" onclick="addPlan()">저장하기</button>
+      <!-- 고치는 중일 때만 보이는 "그만두기" 버튼 -->
+      <button class="big-btn gray-btn" id="p-cancel" onclick="cancelEditPlan()" hidden>고치기 그만두기</button>
     </div>
 
+    <!-- 📅 한 달 일정 (◀ ▶ 로 달을 바꿔요) -->
     <div class="card">
-      <h2>📅 다가오는 일정</h2>
+      <div class="month-bar">
+        <button onclick="movePlanMonth(-1)">◀</button>
+        <span class="m" id="p-month"></span>
+        <button onclick="movePlanMonth(1)">▶</button>
+      </div>
       <div id="plan-list"></div>
-    </div>
-
-    <div class="card">
-      <h2>🗂️ 지난 일정</h2>
-      <div id="plan-old"></div>
+      <button class="small-btn" onclick="goThisMonth()">📍 이번 달로 돌아가기</button>
     </div>
   </section>
 
@@ -342,8 +345,8 @@
 
 <!-- 아래쪽 탭 버튼 4개 -->
 <nav>
-  <button id="tab-money" class="on" onclick="showPage('money')"><span class="ico">💰</span>가계부</button>
-  <button id="tab-plan" onclick="showPage('plan')"><span class="ico">📅</span>일정</button>
+  <button id="tab-money" onclick="showPage('money')"><span class="ico">💰</span>가계부</button>
+  <button id="tab-plan" class="on" onclick="showPage('plan')"><span class="ico">📅</span>일정</button>
   <button id="tab-bp" onclick="showPage('bp')"><span class="ico">❤️</span>혈압</button>
   <button id="tab-weight" onclick="showPage('weight')"><span class="ico">⚖️</span>몸무게</button>
   <button id="tab-stock" onclick="showPage('stock')"><span class="ico">📊</span>주식</button>
@@ -550,11 +553,63 @@ function drawMoney() {
 /* ============================================================
    📅 일정
    ============================================================ */
+let planMonth = todayStr().slice(0, 7);   // 지금 보고 있는 달 (예: "2026-11")
+let editingPlanId = null;                 // 고치는 중인 일정 번호 (없으면 null)
+
+// "저장하기" 버튼 — 새로 적기와 고치기를 둘 다 처리해요
 window.addPlan = function () {
   const text = $("p-text").value.trim();
   if (!text) { alert("내용을 적어 주세요."); return; }
-  addRecord("plans", { date: $("p-date").value || todayStr(), time: $("p-time").value, text, done: false }).catch(saveFail);
+  const date = $("p-date").value || todayStr();
+  const time = $("p-time").value;
+  if (editingPlanId) {
+    // ✏️ 고치는 중이면 → 원래 기록을 새 내용으로 바꾸기
+    updateDoc(doc(box("plans"), editingPlanId), { date, time, text }).catch(saveFail);
+    cancelEditPlan();
+  } else {
+    // ➕ 새 일정 저장
+    addRecord("plans", { date, time, text, done: false }).catch(saveFail);
+    $("p-text").value = ""; $("p-time").value = "";
+  }
+  planMonth = date.slice(0, 7);   // 저장한 날짜의 달을 보여주기
+  drawPlans();
+};
+
+// "고치기" 버튼을 누르면 → 위쪽 입력칸에 그 일정 내용을 채워 넣어요
+window.editPlan = function (id) {
+  const p = data.plans.find((x) => x.id === id);
+  if (!p) return;
+  editingPlanId = id;
+  $("p-date").value = p.date;
+  $("p-time").value = p.time || "";
+  $("p-text").value = p.text;
+  $("p-title").textContent = "✏️ 일정 고치기";
+  $("p-save").textContent = "고친 내용 저장";
+  $("p-cancel").hidden = false;
+  window.scrollTo(0, 0);           // 입력칸이 보이게 맨 위로
+  $("p-text").focus();
+};
+
+// 고치기 그만두기 → 입력칸을 처음 모양으로
+window.cancelEditPlan = function () {
+  editingPlanId = null;
   $("p-text").value = ""; $("p-time").value = "";
+  $("p-date").value = todayStr();
+  $("p-title").textContent = "✏️ 할 일 / 약속 적기";
+  $("p-save").textContent = "저장하기";
+  $("p-cancel").hidden = true;
+};
+
+// ◀ ▶ 버튼으로 달 바꾸기
+window.movePlanMonth = function (step) {
+  const [y, m] = planMonth.split("-").map(Number);
+  const d = new Date(y, m - 1 + step, 1);
+  planMonth = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+  drawPlans();
+};
+window.goThisMonth = function () {
+  planMonth = todayStr().slice(0, 7);
+  drawPlans();
 };
 
 window.togglePlan = function (id) {
@@ -567,6 +622,7 @@ function planRow(p) {
     <div class="list-item ${p.done ? "done" : ""}">
       <input type="checkbox" class="chk" ${p.done ? "checked" : ""} onclick="togglePlan('${p.id}')">
       <div class="main-txt"><div>${p.time ? "<b>" + safe(p.time) + "</b> " : ""}${safe(p.text)}</div></div>
+      <button class="del" onclick="editPlan('${p.id}')">고치기</button>
       <button class="del" onclick="delItem('plans','${p.id}')">지우기</button>
     </div>`;
 }
@@ -582,13 +638,14 @@ function groupByDate(list) {
   });
   return html;
 }
+// 고른 달(planMonth)의 일정만, 1일부터 날짜 순서대로 보여주기
 function drawPlans() {
-  const today = todayStr();
+  const [y, m] = planMonth.split("-");
+  $("p-month").textContent = y + "년 " + Number(m) + "월";
   const key = (p) => p.date + " " + (p.time || "99:99");
-  const upcoming = data.plans.filter((p) => p.date >= today).sort((a, b) => key(a).localeCompare(key(b)));
-  const old = data.plans.filter((p) => p.date < today).sort((a, b) => key(b).localeCompare(key(a))).slice(0, 20);
-  $("plan-list").innerHTML = upcoming.length ? groupByDate(upcoming) : `<div class="empty">다가오는 일정이 없어요 🙂</div>`;
-  $("plan-old").innerHTML = old.length ? groupByDate(old) : `<div class="empty">지난 일정이 없어요</div>`;
+  const list = data.plans.filter((p) => p.date.startsWith(planMonth))
+                         .sort((a, b) => key(a).localeCompare(key(b)));
+  $("plan-list").innerHTML = list.length ? groupByDate(list) : `<div class="empty">이 달에는 일정이 없어요 🙂</div>`;
 }
 
 /* ============================================================
