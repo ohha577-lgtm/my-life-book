@@ -1,0 +1,666 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>나의 생활 기록장</title>
+<!--
+  ============================================================
+  📒 나의 생활 기록장 (가계부 + 일정 + 혈압) — 파이어베이스 버전
+  ------------------------------------------------------------
+  - 구글로 로그인하면, 휴대폰·탭 어디서든 같은 기록이 보여요.
+  - 기록은 파이어베이스(내 계정만 볼 수 있는 곳)에 저장돼요.
+  - ★ 바꿀 곳: 아래쪽 <script> 안의 firebaseConfig 한 군데뿐!
+  ============================================================
+-->
+<style>
+  /* ---------- 1. 색깔과 글씨 기본 설정 ---------- */
+  :root {
+    --bg: #f5f7fb;  --card: #ffffff;  --text: #222;  --sub: #666;
+    --line: #e2e6ee; --main: #2b6fd6; --green: #1f9d55; --red: #d64545;
+    --orange: #e58a1f; --purple: #7b4bd1;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    font-size: 18px; line-height: 1.5;
+  }
+  header {
+    background: var(--main); color: #fff; padding: 16px; text-align: center;
+    font-size: 22px; font-weight: bold;
+  }
+  main { max-width: 720px; margin: 0 auto; padding: 16px 16px 110px; }
+
+  /* ---------- 2. 아래쪽 탭 버튼 ---------- */
+  nav {
+    position: fixed; left: 0; right: 0; bottom: 0; background: #fff;
+    border-top: 1px solid var(--line); display: flex; z-index: 10;
+  }
+  nav button {
+    flex: 1; border: 0; background: none; padding: 10px 0 12px;
+    font-size: 15px; color: var(--sub); cursor: pointer;
+  }
+  nav button .ico { display: block; font-size: 26px; }
+  nav button.on { color: var(--main); font-weight: bold; }
+
+  /* ---------- 3. 카드(하얀 상자) ---------- */
+  .card {
+    background: var(--card); border-radius: 14px; padding: 16px;
+    margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  }
+  h2 { font-size: 20px; margin: 0 0 12px; }
+  label { display: block; font-size: 15px; color: var(--sub); margin: 10px 0 4px; }
+  input, select, textarea {
+    width: 100%; font-size: 18px; padding: 10px 12px;
+    border: 1px solid var(--line); border-radius: 10px; background: #fff;
+  }
+  .row { display: flex; gap: 10px; }
+  .row > div { flex: 1; min-width: 0; }
+  .big-btn {
+    width: 100%; margin-top: 14px; padding: 14px; border: 0; border-radius: 12px;
+    background: var(--main); color: #fff; font-size: 19px; font-weight: bold; cursor: pointer;
+  }
+  .gray-btn { background: #8a93a3; }
+
+  /* 수입/지출 고르는 버튼 */
+  .toggle { display: flex; gap: 8px; }
+  .toggle button {
+    flex: 1; padding: 12px; font-size: 18px; border-radius: 10px;
+    border: 2px solid var(--line); background: #fff; cursor: pointer;
+  }
+  .toggle button.on-in  { border-color: var(--green); color: var(--green); font-weight: bold; }
+  .toggle button.on-out { border-color: var(--red);   color: var(--red);   font-weight: bold; }
+
+  /* ---------- 4. 목록 ---------- */
+  .list-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 0; border-bottom: 1px solid var(--line);
+  }
+  .list-item:last-child { border-bottom: 0; }
+  .list-item .main-txt { flex: 1; min-width: 0; }
+  .list-item .small { font-size: 14px; color: var(--sub); }
+  .del {
+    border: 0; background: #f1f1f1; border-radius: 8px; padding: 6px 10px;
+    font-size: 14px; color: var(--sub); cursor: pointer;
+  }
+  .money-in  { color: var(--green); font-weight: bold; white-space: nowrap; }
+  .money-out { color: var(--red);   font-weight: bold; white-space: nowrap; }
+  .empty { color: var(--sub); text-align: center; padding: 16px 0; }
+
+  /* 합계 상자 3개 */
+  .sum { display: flex; gap: 8px; text-align: center; }
+  .sum > div { flex: 1; background: var(--bg); border-radius: 10px; padding: 10px 4px; }
+  .sum .n { font-size: 18px; font-weight: bold; }
+  .sum .t { font-size: 14px; color: var(--sub); }
+
+  /* 월 바꾸기 */
+  .month-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .month-bar button {
+    border: 0; background: var(--bg); border-radius: 10px; padding: 8px 14px;
+    font-size: 20px; cursor: pointer;
+  }
+  .month-bar .m { font-size: 20px; font-weight: bold; }
+
+  /* 일정 완료 체크 */
+  .chk { width: 26px; height: 26px; flex: none; }
+  .done .main-txt { text-decoration: line-through; color: #aaa; }
+  .date-head { font-weight: bold; color: var(--main); margin: 14px 0 2px; }
+  .today-tag {
+    background: var(--orange); color: #fff; font-size: 12px; border-radius: 6px;
+    padding: 1px 6px; margin-left: 6px;
+  }
+
+  /* 혈압 상태 표시 */
+  .badge { font-size: 13px; border-radius: 6px; padding: 2px 8px; color: #fff; white-space: nowrap; }
+  .b-ok { background: var(--green); } .b-care { background: #c9a400; }
+  .b-pre { background: var(--orange); } .b-high { background: var(--red); }
+  .note { font-size: 14px; color: var(--sub); margin-top: 8px; }
+  canvas { width: 100%; height: auto; display: block; }
+  /* 로그인 화면 (로그인 전에는 이것만 보여요) */
+  #login-screen {
+    position: fixed; inset: 0; background: var(--bg); z-index: 50;
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+  }
+  #login-screen[hidden] { display: none; }
+  #login-screen .card { max-width: 420px; width: 100%; text-align: center; padding: 28px 22px; }
+  #login-screen .logo { font-size: 56px; }
+</style>
+</head>
+<body>
+
+<!-- 🔑 로그인 화면 -->
+<div id="login-screen">
+  <div class="card">
+    <div class="logo">📒</div>
+    <h2>나의 생활 기록장</h2>
+    <p id="login-msg">구글 계정으로 로그인하면<br>휴대폰과 탭에서 <b>같은 기록</b>을 볼 수 있어요.</p>
+    <button class="big-btn" id="login-btn" onclick="login()">구글로 로그인</button>
+  </div>
+</div>
+
+<header>📒 나의 생활 기록장</header>
+
+<main>
+  <!-- ======================================================
+       ① 가계부 화면
+       ====================================================== -->
+  <section id="page-money">
+    <div class="card">
+      <h2>✏️ 돈 쓴 것 / 들어온 것 적기</h2>
+      <div class="toggle">
+        <button id="btn-out" class="on-out" onclick="setMoneyType('out')">➖ 지출</button>
+        <button id="btn-in" onclick="setMoneyType('in')">➕ 수입</button>
+      </div>
+      <div class="row">
+        <div><label>날짜</label><input type="date" id="m-date"></div>
+        <div>
+          <label>종류</label>
+          <select id="m-cat"></select>
+        </div>
+      </div>
+      <label>금액 (원)</label>
+      <input type="number" id="m-amount" inputmode="numeric" placeholder="예: 15000">
+      <label>메모 (안 써도 돼요)</label>
+      <input type="text" id="m-memo" placeholder="예: 마트 장보기">
+      <button class="big-btn" onclick="addMoney()">저장하기</button>
+    </div>
+
+    <div class="card">
+      <div class="month-bar">
+        <button onclick="moveMonth(-1)">◀</button>
+        <span class="m" id="m-month"></span>
+        <button onclick="moveMonth(1)">▶</button>
+      </div>
+      <div class="sum">
+        <div><div class="t">수입</div><div class="n money-in" id="sum-in">0</div></div>
+        <div><div class="t">지출</div><div class="n money-out" id="sum-out">0</div></div>
+        <div><div class="t">남은 돈</div><div class="n" id="sum-left">0</div></div>
+      </div>
+      <div id="money-cat-sum" class="note"></div>
+    </div>
+
+    <div class="card">
+      <h2>📋 이번 달 기록</h2>
+      <div id="money-list"></div>
+    </div>
+  </section>
+
+  <!-- ======================================================
+       ② 일정 화면
+       ====================================================== -->
+  <section id="page-plan" hidden>
+    <div class="card">
+      <h2>✏️ 할 일 / 약속 적기</h2>
+      <div class="row">
+        <div><label>날짜</label><input type="date" id="p-date"></div>
+        <div><label>시간 (안 써도 돼요)</label><input type="time" id="p-time"></div>
+      </div>
+      <label>내용</label>
+      <input type="text" id="p-text" placeholder="예: 교육청 회의, 병원 예약">
+      <button class="big-btn" onclick="addPlan()">저장하기</button>
+    </div>
+
+    <div class="card">
+      <h2>📅 다가오는 일정</h2>
+      <div id="plan-list"></div>
+    </div>
+
+    <div class="card">
+      <h2>🗂️ 지난 일정</h2>
+      <div id="plan-old"></div>
+    </div>
+  </section>
+
+  <!-- ======================================================
+       ③ 혈압 화면
+       ====================================================== -->
+  <section id="page-bp" hidden>
+    <div class="card">
+      <h2>✏️ 혈압 적기</h2>
+      <div class="row">
+        <div><label>날짜</label><input type="date" id="b-date"></div>
+        <div><label>시간</label><input type="time" id="b-time"></div>
+      </div>
+      <div class="row">
+        <div><label>높은 숫자 (수축기)</label><input type="number" id="b-sys" inputmode="numeric" placeholder="예: 125"></div>
+        <div><label>낮은 숫자 (이완기)</label><input type="number" id="b-dia" inputmode="numeric" placeholder="예: 82"></div>
+      </div>
+      <div class="row">
+        <div><label>맥박 (안 써도 돼요)</label><input type="number" id="b-pulse" inputmode="numeric" placeholder="예: 70"></div>
+        <div>
+          <label>언제 쟀나요?</label>
+          <select id="b-when">
+            <option>아침</option><option>점심</option><option>저녁</option><option>자기 전</option>
+          </select>
+        </div>
+      </div>
+      <button class="big-btn" onclick="addBP()">저장하기</button>
+    </div>
+
+    <div class="card">
+      <h2>📈 최근 혈압 그래프</h2>
+      <canvas id="bp-chart" width="680" height="220"></canvas>
+      <div class="note">
+        <span style="color:var(--red)">●</span> 높은 숫자 &nbsp;
+        <span style="color:var(--main)">●</span> 낮은 숫자 &nbsp;(최근 14번)
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>📋 혈압 기록</h2>
+      <div id="bp-list"></div>
+      <div class="note">
+        ※ 표시는 참고용이에요. (정상 120/80 미만 · 주의 120~129 · 고혈압 전단계 130~139/80~89 · 고혈압 140/90 이상)<br>
+        걱정되는 숫자가 계속 나오면 꼭 병원에서 상담하세요.
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================================================
+       ④ 설정(백업) 화면
+       ====================================================== -->
+  <section id="page-set" hidden>
+    <div class="card">
+      <h2>👤 내 계정</h2>
+      <p id="who"></p>
+      <p class="note">휴대폰과 탭에서 <b>같은 구글 계정</b>으로 로그인하면 기록이 똑같이 보여요.</p>
+      <button class="big-btn gray-btn" onclick="logout()">로그아웃</button>
+    </div>
+    <div class="card">
+      <h2>💾 백업 (기록 지키기)</h2>
+      <p>기록은 파이어베이스에 자동 저장돼요.<br>그래도 가끔 <b>백업 파일</b>을 저장해 두면 더 안심이에요.</p>
+      <button class="big-btn" onclick="saveBackup()">백업 파일 저장</button>
+      <button class="big-btn gray-btn" onclick="document.getElementById('file-in').click()">백업 파일 불러오기</button>
+      <input type="file" id="file-in" accept=".json" hidden onchange="loadBackup(this)">
+      <p class="note">예전(기기 저장) 버전에서 저장한 백업 파일도 여기서 불러오면 옮겨져요.</p>
+    </div>
+  </section>
+</main>
+
+<!-- 아래쪽 탭 버튼 4개 -->
+<nav>
+  <button id="tab-money" class="on" onclick="showPage('money')"><span class="ico">💰</span>가계부</button>
+  <button id="tab-plan" onclick="showPage('plan')"><span class="ico">📅</span>일정</button>
+  <button id="tab-bp" onclick="showPage('bp')"><span class="ico">❤️</span>혈압</button>
+  <button id="tab-set" onclick="showPage('set')"><span class="ico">⚙️</span>설정</button>
+</nav>
+
+<script type="module">
+/* ============================================================
+   🔥 파이어베이스 연결 버전
+   ------------------------------------------------------------
+   ★★★ 사용자가 바꿀 곳은 아래 firebaseConfig 딱 한 군데예요! ★★★
+   파이어베이스 → 프로젝트 설정 → 내 앱 → "SDK 설정 및 구성"에 있는
+   firebaseConfig 내용을 통째로 복사해서 아래에 붙여 넣으세요.
+   ============================================================ */
+const firebaseConfig = {
+  apiKey: "여기에-붙여넣기",
+  authDomain: "여기에-붙여넣기",
+  projectId: "여기에-붙여넣기",
+  storageBucket: "여기에-붙여넣기",
+  messagingSenderId: "여기에-붙여넣기",
+  appId: "여기에-붙여넣기"
+};
+/* ============ ★ 여기까지만 바꾸면 돼요 ★ ============ */
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, onAuthStateChanged, signOut }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
+         collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+// ---------- 0. 설정을 안 붙여 넣었으면 안내하기 ----------
+const $ = (id) => document.getElementById(id);
+if (firebaseConfig.apiKey.includes("붙여넣기")) {
+  $("login-msg").innerHTML = "⚠️ 아직 파이어베이스 설정을 붙여 넣지 않았어요.<br>index.html 위쪽의 <b>firebaseConfig</b> 부분을 채워 주세요.";
+  $("login-btn").hidden = true;
+  throw new Error("firebaseConfig 비어 있음");
+}
+
+// ---------- 1. 파이어베이스 켜기 ----------
+const app  = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+// 인터넷이 잠깐 끊겨도 쓸 수 있게 기기에도 같이 저장
+const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+});
+
+// 지금 화면에 보여줄 기록 (파이어베이스에서 받아와서 채워요)
+let data = { money: [], plans: [], bp: [] };
+let me = null;            // 로그인한 사람
+let stopListen = [];      // 기록 받아오기 멈추는 스위치들
+
+// 내 기록이 들어 있는 서랍 주소: users/내번호/money (plans, bp)
+const box = (kind) => collection(db, "users", me.uid, kind);
+
+// ---------- 2. 로그인 / 로그아웃 ----------
+window.login = async function () {
+  const provider = new GoogleAuthProvider();
+  try {
+    await signInWithPopup(auth, provider);
+  } catch (e) {
+    // 팝업이 막히면 페이지 이동 방식으로 다시 시도
+    if (e.code === "auth/popup-blocked" || e.code === "auth/operation-not-supported-in-this-environment") {
+      await signInWithRedirect(auth, provider);
+    } else if (e.code === "auth/unauthorized-domain") {
+      alert("파이어베이스 Authentication → 설정 → 승인된 도메인에\n" + location.hostname + " 을(를) 추가해 주세요.");
+    } else if (e.code !== "auth/popup-closed-by-user") {
+      alert("로그인에 실패했어요: " + e.code);
+    }
+  }
+};
+window.logout = async function () {
+  if (confirm("로그아웃할까요?")) await signOut(auth);
+};
+
+// 로그인 상태가 바뀔 때마다 실행
+onAuthStateChanged(auth, (user) => {
+  stopListen.forEach((stop) => stop());
+  stopListen = [];
+  me = user;
+  if (!user) {
+    $("login-screen").hidden = false;
+    data = { money: [], plans: [], bp: [] };
+    return;
+  }
+  $("login-screen").hidden = true;
+  $("who").textContent = (user.displayName || "") + " (" + (user.email || "") + ")";
+
+  // 가계부·일정·혈압 기록을 "실시간으로" 받아오기
+  // → 휴대폰에서 적으면 탭에도 바로 나타나요!
+  ["money", "plans", "bp"].forEach((kind) => {
+    const stop = onSnapshot(box(kind), (snap) => {
+      data[kind] = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      drawAll();
+    }, (err) => {
+      alert("기록을 불러오지 못했어요.\n파이어베이스 규칙(rules)을 확인해 주세요.\n(" + err.code + ")");
+    });
+    stopListen.push(stop);
+  });
+});
+
+// ---------- 3. 저장 / 고치기 / 지우기 ----------
+async function addRecord(kind, record) {
+  const id = newId();
+  await setDoc(doc(box(kind), id), record);
+}
+function saveFail(e) { alert("저장에 실패했어요. 인터넷 연결을 확인해 주세요.\n(" + e.code + ")"); }
+
+// ---------- 4. 자주 쓰는 작은 도구들 ----------
+const newId = () => Date.now() + "-" + Math.random().toString(36).slice(2, 7);
+const won = (n) => Number(n).toLocaleString("ko-KR") + "원";
+function todayStr() {
+  const d = new Date();
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+function nowTime() {
+  const d = new Date();
+  return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+}
+function niceDate(s) {
+  const d = new Date(s + "T00:00:00");
+  const days = ["일", "월", "화", "수", "목", "금", "토"];
+  return (d.getMonth() + 1) + "월 " + d.getDate() + "일 (" + days[d.getDay()] + ")";
+}
+function safe(t) {
+  return String(t ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+// ---------- 5. 탭 바꾸기 ----------
+window.showPage = function (name) {
+  ["money", "plan", "bp", "set"].forEach((p) => {
+    $("page-" + p).hidden = (p !== name);
+    $("tab-" + p).classList.toggle("on", p === name);
+  });
+  if (name === "bp") drawChart();
+  window.scrollTo(0, 0);
+};
+
+/* ============================================================
+   💰 가계부
+   ============================================================ */
+const CATS = {
+  out: ["식비", "장보기", "교통", "병원·약", "통신", "경조사", "취미·여행", "생활용품", "기타"],
+  in:  ["월급", "용돈", "환급", "기타"]
+};
+let moneyType = "out";
+let viewMonth = todayStr().slice(0, 7);
+
+window.setMoneyType = function (t) {
+  moneyType = t;
+  $("btn-out").className = t === "out" ? "on-out" : "";
+  $("btn-in").className  = t === "in"  ? "on-in"  : "";
+  $("m-cat").innerHTML = CATS[t].map((c) => `<option>${c}</option>`).join("");
+};
+
+window.addMoney = function () {
+  const amount = Number($("m-amount").value);
+  if (!amount || amount <= 0) { alert("금액을 적어 주세요."); return; }
+  const date = $("m-date").value || todayStr();
+  addRecord("money", { type: moneyType, date, cat: $("m-cat").value, amount, memo: $("m-memo").value.trim() }).catch(saveFail);
+  $("m-amount").value = ""; $("m-memo").value = "";
+  viewMonth = date.slice(0, 7);
+};
+
+window.moveMonth = function (step) {
+  const [y, m] = viewMonth.split("-").map(Number);
+  const d = new Date(y, m - 1 + step, 1);
+  viewMonth = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+  drawMoney();
+};
+
+function drawMoney() {
+  const [y, m] = viewMonth.split("-");
+  $("m-month").textContent = y + "년 " + Number(m) + "월";
+  const list = data.money.filter((r) => r.date.startsWith(viewMonth))
+                         .sort((a, b) => (b.date + b.id).localeCompare(a.date + a.id));
+  let inSum = 0, outSum = 0;
+  const byCat = {};
+  list.forEach((r) => {
+    if (r.type === "in") inSum += r.amount;
+    else { outSum += r.amount; byCat[r.cat] = (byCat[r.cat] || 0) + r.amount; }
+  });
+  $("sum-in").textContent = won(inSum);
+  $("sum-out").textContent = won(outSum);
+  $("sum-left").textContent = won(inSum - outSum);
+  $("sum-left").style.color = inSum - outSum < 0 ? "var(--red)" : "var(--text)";
+  const cats = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
+  $("money-cat-sum").innerHTML = cats.length
+    ? "어디에 썼나요? " + cats.map(([c, v]) => `<b>${safe(c)}</b> ${won(v)}`).join(" · ") : "";
+  $("money-list").innerHTML = list.length ? list.map((r) => `
+    <div class="list-item">
+      <div class="main-txt">
+        <div>${safe(r.cat)}${r.memo ? " · " + safe(r.memo) : ""}</div>
+        <div class="small">${niceDate(r.date)}</div>
+      </div>
+      <div class="${r.type === "in" ? "money-in" : "money-out"}">${r.type === "in" ? "+" : "-"}${won(r.amount)}</div>
+      <button class="del" onclick="delItem('money','${r.id}')">지우기</button>
+    </div>`).join("") : `<div class="empty">아직 기록이 없어요 🙂</div>`;
+}
+
+/* ============================================================
+   📅 일정
+   ============================================================ */
+window.addPlan = function () {
+  const text = $("p-text").value.trim();
+  if (!text) { alert("내용을 적어 주세요."); return; }
+  addRecord("plans", { date: $("p-date").value || todayStr(), time: $("p-time").value, text, done: false }).catch(saveFail);
+  $("p-text").value = ""; $("p-time").value = "";
+};
+
+window.togglePlan = function (id) {
+  const p = data.plans.find((x) => x.id === id);
+  if (p) updateDoc(doc(box("plans"), id), { done: !p.done }).catch(saveFail);
+};
+
+function planRow(p) {
+  return `
+    <div class="list-item ${p.done ? "done" : ""}">
+      <input type="checkbox" class="chk" ${p.done ? "checked" : ""} onclick="togglePlan('${p.id}')">
+      <div class="main-txt"><div>${p.time ? "<b>" + safe(p.time) + "</b> " : ""}${safe(p.text)}</div></div>
+      <button class="del" onclick="delItem('plans','${p.id}')">지우기</button>
+    </div>`;
+}
+function groupByDate(list) {
+  let html = "", last = "";
+  const today = todayStr();
+  list.forEach((p) => {
+    if (p.date !== last) {
+      html += `<div class="date-head">${niceDate(p.date)}${p.date === today ? '<span class="today-tag">오늘</span>' : ""}</div>`;
+      last = p.date;
+    }
+    html += planRow(p);
+  });
+  return html;
+}
+function drawPlans() {
+  const today = todayStr();
+  const key = (p) => p.date + " " + (p.time || "99:99");
+  const upcoming = data.plans.filter((p) => p.date >= today).sort((a, b) => key(a).localeCompare(key(b)));
+  const old = data.plans.filter((p) => p.date < today).sort((a, b) => key(b).localeCompare(key(a))).slice(0, 20);
+  $("plan-list").innerHTML = upcoming.length ? groupByDate(upcoming) : `<div class="empty">다가오는 일정이 없어요 🙂</div>`;
+  $("plan-old").innerHTML = old.length ? groupByDate(old) : `<div class="empty">지난 일정이 없어요</div>`;
+}
+
+/* ============================================================
+   ❤️ 혈압
+   ============================================================ */
+function bpLevel(sys, dia) {
+  if (sys >= 140 || dia >= 90) return { t: "고혈압", c: "b-high" };
+  if (sys >= 130 || dia >= 80) return { t: "고혈압 전단계", c: "b-pre" };
+  if (sys >= 120)              return { t: "주의", c: "b-care" };
+  return { t: "정상", c: "b-ok" };
+}
+
+window.addBP = function () {
+  const sys = Number($("b-sys").value), dia = Number($("b-dia").value);
+  if (!sys || !dia) { alert("높은 숫자와 낮은 숫자를 모두 적어 주세요."); return; }
+  if (sys < 50 || sys > 260 || dia < 30 || dia > 180) {
+    if (!confirm("숫자가 평소와 많이 달라요. 이대로 저장할까요?")) return;
+  }
+  addRecord("bp", {
+    date: $("b-date").value || todayStr(), time: $("b-time").value || nowTime(),
+    sys, dia, pulse: Number($("b-pulse").value) || null, when: $("b-when").value
+  }).catch(saveFail);
+  $("b-sys").value = ""; $("b-dia").value = ""; $("b-pulse").value = "";
+};
+
+function sortedBP() {
+  return [...data.bp].sort((a, b) => (b.date + b.time + b.id).localeCompare(a.date + a.time + a.id));
+}
+function drawBP() {
+  const list = sortedBP();
+  $("bp-list").innerHTML = list.length ? list.slice(0, 60).map((r) => {
+    const lv = bpLevel(r.sys, r.dia);
+    return `
+      <div class="list-item">
+        <div class="main-txt">
+          <div><b style="font-size:20px">${r.sys} / ${r.dia}</b>${r.pulse ? ` <span class="small">맥박 ${r.pulse}</span>` : ""}</div>
+          <div class="small">${niceDate(r.date)} ${safe(r.time)} · ${safe(r.when)}</div>
+        </div>
+        <span class="badge ${lv.c}">${lv.t}</span>
+        <button class="del" onclick="delItem('bp','${r.id}')">지우기</button>
+      </div>`;
+  }).join("") : `<div class="empty">아직 혈압 기록이 없어요 🙂</div>`;
+  drawChart();
+}
+function drawChart() {
+  const cv = $("bp-chart");
+  if (!cv || $("page-bp").hidden) return;
+  const ctx = cv.getContext("2d");
+  const W = cv.width, H = cv.height, padL = 40, padR = 12, padT = 12, padB = 28;
+  ctx.clearRect(0, 0, W, H);
+  ctx.font = "14px sans-serif";
+  const pts = sortedBP().slice(0, 14).reverse();
+  if (pts.length < 2) {
+    ctx.fillStyle = "#888"; ctx.textAlign = "center";
+    ctx.fillText("기록이 2개 이상 있으면 그래프가 나와요", W / 2, H / 2);
+    return;
+  }
+  const minV = 50, maxV = 190;
+  const x = (i) => padL + (W - padL - padR) * (i / (pts.length - 1));
+  const y = (v) => padT + (H - padT - padB) * (1 - (Math.min(Math.max(v, minV), maxV) - minV) / (maxV - minV));
+  [60, 80, 100, 120, 140, 160, 180].forEach((v) => {
+    ctx.strokeStyle = (v === 140) ? "#f3b4b4" : "#eee"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(padL, y(v)); ctx.lineTo(W - padR, y(v)); ctx.stroke();
+    ctx.fillStyle = "#999"; ctx.textAlign = "right"; ctx.fillText(v, padL - 6, y(v) + 4);
+  });
+  function line(key, color) {
+    ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.beginPath();
+    pts.forEach((p, i) => (i ? ctx.lineTo(x(i), y(p[key])) : ctx.moveTo(x(i), y(p[key]))));
+    ctx.stroke(); ctx.fillStyle = color;
+    pts.forEach((p, i) => { ctx.beginPath(); ctx.arc(x(i), y(p[key]), 4, 0, Math.PI * 2); ctx.fill(); });
+  }
+  line("sys", "#d64545");
+  line("dia", "#2b6fd6");
+  ctx.fillStyle = "#888";
+  ctx.textAlign = "left";  ctx.fillText(pts[0].date.slice(5).replace("-", "/"), padL, H - 6);
+  ctx.textAlign = "right"; ctx.fillText(pts[pts.length - 1].date.slice(5).replace("-", "/"), W - padR, H - 6);
+}
+
+/* ============================================================
+   🗑️ 지우기
+   ============================================================ */
+window.delItem = function (kind, id) {
+  if (!confirm("정말 지울까요?")) return;
+  deleteDoc(doc(box(kind), id)).catch(saveFail);
+};
+
+/* ============================================================
+   💾 백업 저장 / 불러오기
+   (예전 "기기 저장" 버전의 백업 파일도 불러올 수 있어요)
+   ============================================================ */
+window.saveBackup = function () {
+  const clean = {};
+  ["money", "plans", "bp"].forEach((k) => clean[k] = data[k]);
+  const blob = new Blob([JSON.stringify(clean, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "생활기록장_백업_" + todayStr() + ".json";
+  document.body.appendChild(a); a.click(); a.remove();
+};
+
+window.loadBackup = function (input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async () => {
+    try {
+      const d = JSON.parse(reader.result);
+      if (!Array.isArray(d.money) || !Array.isArray(d.plans) || !Array.isArray(d.bp)) throw 0;
+      const total = d.money.length + d.plans.length + d.bp.length;
+      if (!confirm(`백업 파일의 기록 ${total}개를 내 기록에 더할까요?\n(같은 기록은 겹치지 않아요)`)) return;
+      // 한 번에 400개씩 나눠서 올리기
+      const all = [];
+      ["money", "plans", "bp"].forEach((k) => d[k].forEach((r) => all.push([k, r])));
+      for (let i = 0; i < all.length; i += 400) {
+        const batch = writeBatch(db);
+        all.slice(i, i + 400).forEach(([k, r]) => {
+          const { id, ...rest } = r;
+          batch.set(doc(box(k), String(id || newId())), rest);
+        });
+        await batch.commit();
+      }
+      alert("불러오기 완료! 🎉");
+    } catch (e) { alert("이 파일은 백업 파일이 아니거나, 올리기에 실패했어요."); }
+    input.value = "";
+  };
+  reader.readAsText(file);
+};
+
+/* ============================================================
+   ▶️ 처음 켰을 때
+   ============================================================ */
+function drawAll() { drawMoney(); drawPlans(); drawBP(); }
+
+$("m-date").value = todayStr();
+$("p-date").value = todayStr();
+$("b-date").value = todayStr();
+$("b-time").value = nowTime();
+setMoneyType("out");
+drawAll();
+</script>
+</body>
+</html>
