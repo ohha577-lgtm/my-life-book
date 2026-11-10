@@ -159,6 +159,15 @@
   }
   input.ex-in::placeholder { color: #c9d1de; font-weight: normal; }
   input.ex-in:focus { outline: none; border-color: var(--main); background: #fff; }
+  /* ---------- 📊 주식 · 🎁 포인트: 항목 이름(진한 빨강)과 메모 ---------- */
+  .item-name, .stock-box .item-name { color: #b00020; font-weight: bold; }
+  label.item-name { font-size: 17px; }
+  input.memo-in { font-size: 15px; padding: 6px 10px; margin-top: 4px; background: #fffaf0; }
+  .memo {
+    font-size: 14px; color: #6b5a3a; background: #fff4dc; border-radius: 6px;
+    padding: 2px 6px; margin: 2px 0 4px; word-break: break-all;
+  }
+  .btn-col { display: flex; flex-direction: column; gap: 6px; }
   .ex-chip {
     display: inline-block; background: var(--bg); border-radius: 8px;
     padding: 2px 8px; margin: 3px 4px 0 0; font-size: 16px;
@@ -330,13 +339,14 @@
        ====================================================== -->
   <section id="page-stock" hidden>
     <div class="card">
-      <h2>✏️ 주식 금액 적기</h2>
+      <h2 id="s-title">✏️ 주식 금액 적기</h2>
       <label>날짜</label>
-      <input type="date" id="s-date">
+      <input type="date" id="s-date" onchange="loadStockDay()">
       <div class="grid2" id="s-inputs"></div>
       <button class="small-btn" onclick="fillLastStock()">↩️ 지난번 숫자 불러오기</button>
       <button class="big-btn" onclick="addStock()">저장하기</button>
-      <p class="note">같은 날짜에 다시 적으면 새 숫자로 바뀌어요.</p>
+      <p class="note">메모는 안 써도 돼요. 메모를 안 쓴 항목은 기록에 메모가 안 나와요.<br>
+        날짜를 고르거나 기록의 <b>고치기</b>를 누르면, 그날 숫자와 메모가 칸에 나와서 고칠 수 있어요.</p>
     </div>
     <div class="card">
       <h2>📈 총액 그래프</h2>
@@ -346,6 +356,26 @@
     <div class="card">
       <h2>📋 주식 기록</h2>
       <div id="s-list"></div>
+    </div>
+  </section>
+
+  <!-- ======================================================
+       ⑤-2 포인트 화면 (OK · 토스 · 금 · LP)
+       ====================================================== -->
+  <section id="page-pt" hidden>
+    <div class="card">
+      <h2 id="pt-title">✏️ 포인트 적기</h2>
+      <label>날짜</label>
+      <input type="date" id="pt-date" onchange="loadPointDay()">
+      <div class="grid2" id="pt-inputs"></div>
+      <button class="small-btn" onclick="fillLastPoint()">↩️ 지난번 숫자 불러오기</button>
+      <button class="big-btn" onclick="addPoint()">저장하기</button>
+      <p class="note">메모는 안 써도 돼요. 메모를 안 쓴 항목은 기록에 메모가 안 나와요.<br>
+        날짜를 고르거나 기록의 <b>고치기</b>를 누르면, 그날 숫자와 메모가 칸에 나와서 고칠 수 있어요.</p>
+    </div>
+    <div class="card">
+      <h2>📋 포인트 기록</h2>
+      <div id="pt-list"></div>
     </div>
   </section>
 
@@ -409,13 +439,14 @@
   </section>
 </main>
 
-<!-- 아래쪽 탭 버튼 4개 -->
+<!-- 아래쪽 탭 버튼 -->
 <nav>
   <button id="tab-money" onclick="showPage('money')"><span class="ico">💰</span>가계부</button>
   <button id="tab-plan" class="on" onclick="showPage('plan')"><span class="ico">📅</span>일정</button>
   <button id="tab-bp" onclick="showPage('bp')"><span class="ico">❤️</span>혈압</button>
   <button id="tab-weight" onclick="showPage('weight')"><span class="ico">⚖️</span>몸무게</button>
   <button id="tab-stock" onclick="showPage('stock')"><span class="ico">📊</span>주식</button>
+  <button id="tab-pt" onclick="showPage('pt')"><span class="ico">🎁</span>포인트</button>
   <button id="tab-ex" onclick="showPage('ex')"><span class="ico">🏃</span>운동</button>
   <button id="tab-set" onclick="showPage('set')"><span class="ico">⚙️</span>설정</button>
 </nav>
@@ -462,8 +493,8 @@ const db = initializeFirestore(app, {
 });
 
 // 지금 화면에 보여줄 기록 (파이어베이스에서 받아와서 채워요)
-const KINDS = ["money", "plans", "bp", "weight", "stocks", "exercise"];   // 기록 종류 6가지
-let data = { money: [], plans: [], bp: [], weight: [], stocks: [], exercise: [] };
+const KINDS = ["money", "plans", "bp", "weight", "stocks", "points", "exercise"];   // 기록 종류 7가지
+let data = { money: [], plans: [], bp: [], weight: [], stocks: [], points: [], exercise: [] };
 let me = null;            // 로그인한 사람
 let stopListen = [];      // 기록 받아오기 멈추는 스위치들
 
@@ -497,7 +528,7 @@ onAuthStateChanged(auth, (user) => {
   me = user;
   if (!user) {
     $("login-screen").hidden = false;
-    data = { money: [], plans: [], bp: [], weight: [], stocks: [], exercise: [] };
+    data = { money: [], plans: [], bp: [], weight: [], stocks: [], points: [], exercise: [] };
     return;
   }
   $("login-screen").hidden = true;
@@ -545,7 +576,7 @@ function safe(t) {
 
 // ---------- 5. 탭 바꾸기 ----------
 window.showPage = function (name) {
-  ["money", "plan", "bp", "weight", "stock", "ex", "set"].forEach((p) => {
+  ["money", "plan", "bp", "weight", "stock", "pt", "ex", "set"].forEach((p) => {
     $("page-" + p).hidden = (p !== name);
     $("tab-" + p).classList.toggle("on", p === name);
   });
@@ -876,47 +907,101 @@ const STOCKS = [
   ["yieldmax", "일드믹스"]
 ];
 
+/* ------------------------------------------------------------
+   🧰 주식·포인트가 같이 쓰는 도구
+   - 항목마다 "숫자 칸" + "메모 칸"이 있어요.
+   - 메모는 rec.memo = { 항목이름: "메모 내용" } 모양으로 저장돼요.
+     (메모를 안 쓴 항목은 아예 저장 안 해서, 화면에도 안 나와요)
+   ------------------------------------------------------------ */
+// 입력칸 만들기 (pre = "s" 또는 "pt")
+function makeItemInputs(pre, items) {
+  return items.map(([key, name]) => `
+    <div>
+      <label class="item-name">${name}</label>
+      <input type="number" id="${pre}-${key}" inputmode="decimal" step="any">
+      <input type="text" class="memo-in" id="${pre}-${key}-memo" placeholder="📝 메모 (안 써도 돼요)">
+    </div>`).join("");
+}
+// 칸에 적힌 숫자와 메모를 읽어서 기록 만들기
+function readItemInputs(pre, items, rec) {
+  let any = false;
+  rec.memo = {};
+  items.forEach(([key]) => {
+    const v = $(pre + "-" + key).value;
+    rec[key] = v === "" ? null : Number(v);
+    const m = $(pre + "-" + key + "-memo").value.trim();
+    if (m) rec.memo[key] = m;
+    if (v !== "" || m) any = true;
+  });
+  return any;   // 하나라도 적었으면 true
+}
+// 기록(rec)의 숫자와 메모를 칸에 채우기 (rec가 비어 있으면 빈칸)
+function fillItemInputs(pre, items, rec, withMemo = true) {
+  items.forEach(([key]) => {
+    $(pre + "-" + key).value = rec[key] ?? "";
+    if (withMemo) $(pre + "-" + key + "-memo").value = rec.memo?.[key] ?? "";
+  });
+}
+// 기록 목록에서 항목 하나 보여주기 (메모가 있을 때만 메모 표시)
+function itemCell(r, key, name) {
+  const memo = r.memo?.[key];
+  return `<div><span class="item-name">${name}</span> ${r[key] == null ? "-" : numStr(r[key])}`
+       + (memo ? `<div class="memo">📝 ${safe(memo)}</div>` : "") + `</div>`;
+}
+
 function makeStockInputs() {
-  let html = STOCKS.map(([key, name]) =>
-    `<div><label>${name}</label><input type="number" id="s-${key}" inputmode="decimal" step="any"></div>`
-  ).join("");
+  let html = makeItemInputs("s", STOCKS);
   html += `<div><label>환율</label><input type="number" id="s-fx" inputmode="decimal" step="any" placeholder="예: 1380"></div>`;
   html += `<div><label><b>총액</b></label><input type="number" id="s-total" inputmode="decimal" step="any"></div>`;
   $("s-inputs").innerHTML = html;
 }
-// 가장 최근 기록의 숫자를 칸에 채워 넣기
+// 가장 최근 기록의 숫자를 칸에 채워 넣기 (메모는 안 가져와요)
 window.fillLastStock = function () {
   const last = [...data.stocks].sort((a, b) => b.date.localeCompare(a.date))[0];
   if (!last) { alert("아직 지난 기록이 없어요."); return; }
-  STOCKS.forEach(([key]) => $("s-" + key).value = last[key] ?? "");
+  fillItemInputs("s", STOCKS, last, false);
   $("s-fx").value = last.fx ?? "";
   $("s-total").value = last.total ?? "";
+};
+// 날짜를 고르면 → 그날 기록(숫자+메모)을 칸에 채워요. 없으면 빈칸.
+let stockLoaded = null;   // 칸에 불러온 기록의 날짜
+window.loadStockDay = function () {
+  const date = $("s-date").value;
+  const r = data.stocks.find((x) => x.date === date);
+  fillItemInputs("s", STOCKS, r || {});
+  $("s-fx").value = r?.fx ?? "";
+  $("s-total").value = r?.total ?? "";
+  stockLoaded = r ? date : null;
+  $("s-title").textContent = r ? "✏️ " + niceDate(date) + " 주식 기록 고치기" : "✏️ 주식 금액 적기";
+};
+// 목록의 "고치기" 버튼
+window.editStock = function (date) {
+  $("s-date").value = date;
+  loadStockDay();
+  window.scrollTo(0, 0);
 };
 
 window.addStock = function () {
   const date = $("s-date").value || todayStr();
   const rec = { date };
-  let any = false;
-  STOCKS.forEach(([key]) => {
-    const v = $("s-" + key).value;
-    rec[key] = v === "" ? null : Number(v);
-    if (v !== "") any = true;
-  });
+  const any = readItemInputs("s", STOCKS, rec);
   const fx = $("s-fx").value, total = $("s-total").value;
   rec.fx = fx === "" ? null : Number(fx);
   rec.total = total === "" ? null : Number(total);
-  if (!any && rec.total == null) { alert("금액을 하나 이상 적어 주세요."); return; }
-  if (data.stocks.some((r) => r.date === date) && !confirm(niceDate(date) + " 기록이 이미 있어요. 새 숫자로 바꿀까요?")) return;
+  if (!any && rec.total == null) { alert("금액이나 메모를 하나 이상 적어 주세요."); return; }
+  if (stockLoaded !== date && data.stocks.some((r) => r.date === date)
+      && !confirm(niceDate(date) + " 기록이 이미 있어요. 새 숫자로 바꿀까요?")) return;
   setDoc(doc(box("stocks"), date), rec).catch(saveFail);
-  STOCKS.forEach(([key]) => $("s-" + key).value = "");
+  fillItemInputs("s", STOCKS, {});
   $("s-fx").value = ""; $("s-total").value = "";
+  stockLoaded = null;
+  $("s-title").textContent = "✏️ 주식 금액 적기";
 };
 
 function drawStock() {
   const list = [...data.stocks].sort((a, b) => b.date.localeCompare(a.date));
   $("s-list").innerHTML = list.length ? list.slice(0, 60).map((r, i) => {
-    const items = STOCKS.map(([key, name]) =>
-      `<div><span>${name}</span> ${r[key] == null ? "-" : numStr(r[key])}</div>`).join("");
+    const items = STOCKS.map(([key, name]) => itemCell(r, key, name)).join("");
     return `
     <div class="list-item" style="align-items:flex-start">
       <div class="main-txt">
@@ -924,10 +1009,69 @@ function drawStock() {
         <div class="total-line">총액 ${r.total == null ? "-" : numStr(r.total)}${r.total == null ? "" : diffStr(r.total, list[i + 1]?.total)}</div>
         <div class="stock-box">${items}<div><span>환율</span> ${r.fx == null ? "-" : numStr(r.fx)}</div></div>
       </div>
-      <button class="del" onclick="delItem('stocks','${r.id}')">지우기</button>
+      <div class="btn-col">
+        <button class="del" onclick="editStock('${r.date}')">고치기</button>
+        <button class="del" onclick="delItem('stocks','${r.id}')">지우기</button>
+      </div>
     </div>`;
   }).join("") : `<div class="empty">아직 주식 기록이 없어요 🙂</div>`;
   drawLineChart("s-chart", list.filter((r) => r.total != null).slice(0, 30).reverse(), "total", "#7b4bd1");
+}
+
+/* ============================================================
+   🎁 포인트 (OK · 토스 · 금 · LP)
+   ============================================================ */
+// 포인트 항목 목록. 바꾸고 싶으면 여기만 고치면 돼요.
+const POINTS = [
+  ["ok",   "OK"],
+  ["toss", "토스"],
+  ["gold", "금"],
+  ["lp",   "LP"]
+];
+let pointLoaded = null;
+
+window.fillLastPoint = function () {
+  const last = [...data.points].sort((a, b) => b.date.localeCompare(a.date))[0];
+  if (!last) { alert("아직 지난 기록이 없어요."); return; }
+  fillItemInputs("pt", POINTS, last, false);
+};
+window.loadPointDay = function () {
+  const date = $("pt-date").value;
+  const r = data.points.find((x) => x.date === date);
+  fillItemInputs("pt", POINTS, r || {});
+  pointLoaded = r ? date : null;
+  $("pt-title").textContent = r ? "✏️ " + niceDate(date) + " 포인트 고치기" : "✏️ 포인트 적기";
+};
+window.editPoint = function (date) {
+  $("pt-date").value = date;
+  loadPointDay();
+  window.scrollTo(0, 0);
+};
+window.addPoint = function () {
+  const date = $("pt-date").value || todayStr();
+  const rec = { date };
+  if (!readItemInputs("pt", POINTS, rec)) { alert("숫자나 메모를 하나 이상 적어 주세요."); return; }
+  if (pointLoaded !== date && data.points.some((r) => r.date === date)
+      && !confirm(niceDate(date) + " 기록이 이미 있어요. 새 숫자로 바꿀까요?")) return;
+  // 날짜를 이름표로 써서, 같은 날은 하나만 남아요
+  setDoc(doc(box("points"), date), rec).catch(saveFail);
+  fillItemInputs("pt", POINTS, {});
+  pointLoaded = null;
+  $("pt-title").textContent = "✏️ 포인트 적기";
+};
+function drawPoint() {
+  const list = [...data.points].sort((a, b) => b.date.localeCompare(a.date));
+  $("pt-list").innerHTML = list.length ? list.slice(0, 60).map((r) => `
+    <div class="list-item" style="align-items:flex-start">
+      <div class="main-txt">
+        <div class="small">${niceDate(r.date)}</div>
+        <div class="stock-box">${POINTS.map(([key, name]) => itemCell(r, key, name)).join("")}</div>
+      </div>
+      <div class="btn-col">
+        <button class="del" onclick="editPoint('${r.date}')">고치기</button>
+        <button class="del" onclick="delItem('points','${r.id}')">지우기</button>
+      </div>
+    </div>`).join("") : `<div class="empty">아직 포인트 기록이 없어요 🙂</div>`;
 }
 
 /* ============================================================
@@ -1045,6 +1189,7 @@ window.loadBackup = function (input) {
       if (!Array.isArray(d.money) || !Array.isArray(d.plans) || !Array.isArray(d.bp)) throw 0;
       d.weight = Array.isArray(d.weight) ? d.weight : [];
       d.stocks = Array.isArray(d.stocks) ? d.stocks : [];
+      d.points = Array.isArray(d.points) ? d.points : [];
       d.exercise = Array.isArray(d.exercise) ? d.exercise : [];
       const total = KINDS.reduce((n, k) => n + d[k].length, 0);
       if (!confirm(`백업 파일의 기록 ${total}개를 내 기록에 더할까요?\n(같은 기록은 겹치지 않아요)`)) return;
@@ -1069,7 +1214,7 @@ window.loadBackup = function (input) {
 /* ============================================================
    ▶️ 처음 켰을 때
    ============================================================ */
-function drawAll() { drawMoney(); drawPlans(); drawBP(); drawWeight(); drawStock(); drawExercise(); }
+function drawAll() { drawMoney(); drawPlans(); drawBP(); drawWeight(); drawStock(); drawPoint(); drawExercise(); }
 
 $("m-date").value = todayStr();
 $("p-date").value = todayStr();
@@ -1077,8 +1222,10 @@ $("b-date").value = todayStr();
 $("b-time").value = nowTime();
 $("w-date").value = todayStr();
 $("s-date").value = todayStr();
+$("pt-date").value = todayStr();
 $("e-date").value = todayStr();
 makeStockInputs();
+$("pt-inputs").innerHTML = makeItemInputs("pt", POINTS);
 setMoneyType("out");
 drawAll();
 </script>
