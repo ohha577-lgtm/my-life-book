@@ -207,7 +207,7 @@
         </div>
       </div>
       <label>금액 (원)</label>
-      <input type="number" id="m-amount" inputmode="numeric" placeholder="예: 15000">
+      <input type="text" class="comma" id="m-amount" inputmode="numeric" placeholder="예: 15,000">
       <label>메모 (안 써도 돼요)</label>
       <input type="text" id="m-memo" placeholder="예: 마트 장보기">
       <button class="big-btn" onclick="addMoney()">저장하기</button>
@@ -570,6 +570,35 @@ function niceDate(s) {
   const days = ["일", "월", "화", "수", "목", "금", "토"];
   return (d.getMonth() + 1) + "월 " + d.getDate() + "일 (" + days[d.getDay()] + ")";
 }
+/* 💡 숫자 칸에 1000마다 쉼표(,) 넣기
+   - 칸에는 "1,234,567"처럼 보이지만, 저장할 때는 쉼표를 빼고 숫자로 저장해요. */
+// 숫자 → "1,234.5" 모양 글자 (칸에 채울 때 사용)
+function commaStr(n) {
+  if (n == null || n === "") return "";
+  const [i, d] = String(n).split(".");
+  return i.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + (d != null ? "." + d : "");
+}
+// 칸의 글자에서 쉼표를 빼고 읽기 (비어 있으면 "")
+const plain = (id) => $(id).value.replace(/,/g, "").trim();
+// 글자를 칠 때마다 쉼표를 다시 넣어 줘요
+document.addEventListener("input", (e) => {
+  const el = e.target;
+  if (!el.classList || !el.classList.contains("comma")) return;
+  const pos = el.selectionStart;
+  const digitsBefore = el.value.slice(0, pos).replace(/[^0-9.\-]/g, "").length;  // 커서 앞 숫자 개수
+  let v = el.value.replace(/[^0-9.\-]/g, "");          // 숫자·점·빼기만 남기기
+  const dot = v.indexOf(".");
+  if (dot >= 0) v = v.slice(0, dot + 1) + v.slice(dot + 1).replace(/\./g, "");  // 점은 하나만
+  v = v.replace(/(?!^)-/g, "");                         // 빼기는 맨 앞만
+  const neg = v.startsWith("-");
+  const out = (neg ? "-" : "") + commaStr(neg ? v.slice(1) : v);
+  el.value = out;
+  // 커서를 원래 자리로 (쉼표 때문에 커서가 튀지 않게)
+  let n = 0, i = 0;
+  while (i < out.length && n < digitsBefore) { if (out[i] !== ",") n++; i++; }
+  try { el.setSelectionRange(i, i); } catch (_) {}
+});
+
 function safe(t) {
   return String(t ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
@@ -604,7 +633,7 @@ window.setMoneyType = function (t) {
 };
 
 window.addMoney = function () {
-  const amount = Number($("m-amount").value);
+  const amount = Number(plain("m-amount"));
   if (!amount || amount <= 0) { alert("금액을 적어 주세요."); return; }
   const date = $("m-date").value || todayStr();
   addRecord("money", { type: moneyType, date, cat: $("m-cat").value, amount, memo: $("m-memo").value.trim() }).catch(saveFail);
@@ -918,7 +947,7 @@ function makeItemInputs(pre, items) {
   return items.map(([key, name]) => `
     <div>
       <label class="item-name">${name}</label>
-      <input type="number" id="${pre}-${key}" inputmode="decimal" step="any">
+      <input type="text" class="comma" id="${pre}-${key}" inputmode="decimal">
       <input type="text" class="memo-in" id="${pre}-${key}-memo" placeholder="📝 메모 (안 써도 돼요)">
     </div>`).join("");
 }
@@ -927,7 +956,7 @@ function readItemInputs(pre, items, rec) {
   let any = false;
   rec.memo = {};
   items.forEach(([key]) => {
-    const v = $(pre + "-" + key).value;
+    const v = plain(pre + "-" + key);
     rec[key] = v === "" ? null : Number(v);
     const m = $(pre + "-" + key + "-memo").value.trim();
     if (m) rec.memo[key] = m;
@@ -938,7 +967,7 @@ function readItemInputs(pre, items, rec) {
 // 기록(rec)의 숫자와 메모를 칸에 채우기 (rec가 비어 있으면 빈칸)
 function fillItemInputs(pre, items, rec, withMemo = true) {
   items.forEach(([key]) => {
-    $(pre + "-" + key).value = rec[key] ?? "";
+    $(pre + "-" + key).value = commaStr(rec[key]);
     if (withMemo) $(pre + "-" + key + "-memo").value = rec.memo?.[key] ?? "";
   });
 }
@@ -951,8 +980,8 @@ function itemCell(r, key, name) {
 
 function makeStockInputs() {
   let html = makeItemInputs("s", STOCKS);
-  html += `<div><label>환율</label><input type="number" id="s-fx" inputmode="decimal" step="any" placeholder="예: 1380"></div>`;
-  html += `<div><label><b>총액</b></label><input type="number" id="s-total" inputmode="decimal" step="any"></div>`;
+  html += `<div><label>환율</label><input type="text" class="comma" id="s-fx" inputmode="decimal" placeholder="예: 1,380"></div>`;
+  html += `<div><label><b>총액</b></label><input type="text" class="comma" id="s-total" inputmode="decimal"></div>`;
   $("s-inputs").innerHTML = html;
 }
 // 가장 최근 기록의 숫자를 칸에 채워 넣기 (메모는 안 가져와요)
@@ -960,8 +989,8 @@ window.fillLastStock = function () {
   const last = [...data.stocks].sort((a, b) => b.date.localeCompare(a.date))[0];
   if (!last) { alert("아직 지난 기록이 없어요."); return; }
   fillItemInputs("s", STOCKS, last, false);
-  $("s-fx").value = last.fx ?? "";
-  $("s-total").value = last.total ?? "";
+  $("s-fx").value = commaStr(last.fx);
+  $("s-total").value = commaStr(last.total);
 };
 // 날짜를 고르면 → 그날 기록(숫자+메모)을 칸에 채워요. 없으면 빈칸.
 let stockLoaded = null;   // 칸에 불러온 기록의 날짜
@@ -969,8 +998,8 @@ window.loadStockDay = function () {
   const date = $("s-date").value;
   const r = data.stocks.find((x) => x.date === date);
   fillItemInputs("s", STOCKS, r || {});
-  $("s-fx").value = r?.fx ?? "";
-  $("s-total").value = r?.total ?? "";
+  $("s-fx").value = commaStr(r?.fx);
+  $("s-total").value = commaStr(r?.total);
   stockLoaded = r ? date : null;
   $("s-title").textContent = r ? "✏️ " + niceDate(date) + " 주식 기록 고치기" : "✏️ 주식 금액 적기";
 };
@@ -985,7 +1014,7 @@ window.addStock = function () {
   const date = $("s-date").value || todayStr();
   const rec = { date };
   const any = readItemInputs("s", STOCKS, rec);
-  const fx = $("s-fx").value, total = $("s-total").value;
+  const fx = plain("s-fx"), total = plain("s-total");
   rec.fx = fx === "" ? null : Number(fx);
   rec.total = total === "" ? null : Number(total);
   if (!any && rec.total == null) { alert("금액이나 메모를 하나 이상 적어 주세요."); return; }
