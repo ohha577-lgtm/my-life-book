@@ -109,6 +109,12 @@
   /* 일정 완료 체크 */
   .chk { width: 26px; height: 26px; flex: none; }
   .done .main-txt { text-decoration: line-through; color: #aaa; }
+  /* 일정 메모 (장소·참석자 등) */
+  .plan-memo {
+    font-size: 15px; color: #555; background: #f1f5fc; border-radius: 8px;
+    padding: 4px 8px; margin-top: 4px; white-space: pre-wrap; word-break: break-all;
+  }
+  .done .plan-memo { color: #aaa; }
   .date-head { font-weight: bold; color: var(--main); margin: 14px 0 2px; }
   .today-tag {
     background: var(--orange); color: #fff; font-size: 12px; border-radius: 6px;
@@ -255,6 +261,8 @@
       </div>
       <label>내용</label>
       <input type="text" id="p-text" placeholder="예: 교육청 회의, 병원 예약">
+      <label>📝 메모 (안 써도 돼요)</label>
+      <textarea id="p-memo" rows="3" placeholder="예: 장소 - 교육청 3층 회의실&#10;참석 - 교감, 행정실장"></textarea>
       <button class="big-btn" id="p-save" onclick="addPlan()">저장하기</button>
       <!-- 고치는 중일 때만 보이는 "그만두기" 버튼 -->
       <button class="big-btn gray-btn" id="p-cancel" onclick="cancelEditPlan()" hidden>고치기 그만두기</button>
@@ -699,14 +707,15 @@ window.addPlan = function () {
   if (!text) { alert("내용을 적어 주세요."); return; }
   const date = $("p-date").value || todayStr();
   const time = $("p-time").value;
+  const memo = $("p-memo").value.trim();   // 장소·참석자 등 메모
   if (editingPlanId) {
     // ✏️ 고치는 중이면 → 원래 기록을 새 내용으로 바꾸기
-    updateDoc(doc(box("plans"), editingPlanId), { date, time, text }).catch(saveFail);
+    updateDoc(doc(box("plans"), editingPlanId), { date, time, text, memo }).catch(saveFail);
     cancelEditPlan();
   } else {
     // ➕ 새 일정 저장
-    addRecord("plans", { date, time, text, done: false }).catch(saveFail);
-    $("p-text").value = ""; $("p-time").value = "";
+    addRecord("plans", { date, time, text, memo, done: false }).catch(saveFail);
+    $("p-text").value = ""; $("p-time").value = ""; $("p-memo").value = "";
   }
   planMonth = date.slice(0, 7);   // 저장한 날짜의 달을 보여주기
   drawPlans();
@@ -720,6 +729,7 @@ window.editPlan = function (id) {
   $("p-date").value = p.date;
   $("p-time").value = p.time || "";
   $("p-text").value = p.text;
+  $("p-memo").value = p.memo || "";
   $("p-title").textContent = "✏️ 일정 고치기";
   $("p-save").textContent = "고친 내용 저장";
   $("p-cancel").hidden = false;
@@ -730,7 +740,7 @@ window.editPlan = function (id) {
 // 고치기 그만두기 → 입력칸을 처음 모양으로
 window.cancelEditPlan = function () {
   editingPlanId = null;
-  $("p-text").value = ""; $("p-time").value = "";
+  $("p-text").value = ""; $("p-time").value = ""; $("p-memo").value = "";
   $("p-date").value = todayStr();
   $("p-title").textContent = "✏️ 할 일 / 약속 적기";
   $("p-save").textContent = "저장하기";
@@ -758,7 +768,10 @@ function planRow(p) {
   return `
     <div class="list-item ${p.done ? "done" : ""}">
       <input type="checkbox" class="chk" ${p.done ? "checked" : ""} onclick="togglePlan('${p.id}')">
-      <div class="main-txt"><div>${p.time ? "<b>" + safe(p.time) + "</b> " : ""}${safe(p.text)}</div></div>
+      <div class="main-txt">
+        <div>${p.time ? "<b>" + safe(p.time) + "</b> " : ""}${safe(p.text)}</div>
+        ${p.memo ? `<div class="plan-memo">📝 ${safe(p.memo)}</div>` : ""}
+      </div>
       <button class="del" onclick="editPlan('${p.id}')">고치기</button>
       <button class="del" onclick="delItem('plans','${p.id}')">지우기</button>
     </div>`;
