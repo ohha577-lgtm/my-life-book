@@ -168,6 +168,16 @@
     padding: 2px 6px; margin: 2px 0 4px; word-break: break-all;
   }
   .btn-col { display: flex; flex-direction: column; gap: 6px; }
+  /* 포인트 기록: 항목별 추이 */
+  .pt-group { margin-bottom: 18px; }
+  .pt-group:last-child { margin-bottom: 0; }
+  .pt-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    border-bottom: 2px solid #f0c9cf; padding-bottom: 4px; margin-bottom: 2px;
+  }
+  .pt-head .item-name { font-size: 20px; }
+  .pt-now { font-size: 20px; font-weight: bold; }
+  .pt-row { padding: 8px 0; }
   .ex-chip {
     display: inline-block; background: var(--bg); border-radius: 8px;
     padding: 2px 8px; margin: 3px 4px 0 0; font-size: 16px;
@@ -368,13 +378,13 @@
       <label>날짜</label>
       <input type="date" id="pt-date" onchange="loadPointDay()">
       <div class="grid2" id="pt-inputs"></div>
-      <button class="small-btn" onclick="fillLastPoint()">↩️ 지난번 숫자 불러오기</button>
       <button class="big-btn" onclick="addPoint()">저장하기</button>
-      <p class="note">메모는 안 써도 돼요. 메모를 안 쓴 항목은 기록에 메모가 안 나와요.<br>
-        날짜를 고르거나 기록의 <b>고치기</b>를 누르면, 그날 숫자와 메모가 칸에 나와서 고칠 수 있어요.</p>
+      <p class="note">칸에는 항목마다 <b>마지막으로 적은 숫자</b>가 늘 남아 있어요. 바뀐 항목만 고쳐서 저장하면 돼요.<br>
+        메모는 안 써도 돼요. 메모를 쓴 날만 기록에 메모가 나와요.<br>
+        아래 기록의 <b>고치기</b>를 누르면 그날 숫자와 메모가 칸에 나와요.</p>
     </div>
     <div class="card">
-      <h2>📋 포인트 기록</h2>
+      <h2>📋 포인트 기록 (항목별 변화)</h2>
       <div id="pt-list"></div>
     </div>
   </section>
@@ -1057,19 +1067,34 @@ const POINTS = [
   ["gold", "금"],
   ["lp",   "LP"]
 ];
-let pointLoaded = null;
+let pointLoaded = null;   // 칸에 불러온 날짜 기록 (고치는 중일 때)
+let ptTouched = false;    // 칸에 뭔가 적는 중이면 true (그동안은 칸을 안 건드려요)
 
-window.fillLastPoint = function () {
-  const last = [...data.points].sort((a, b) => b.date.localeCompare(a.date))[0];
-  if (!last) { alert("아직 지난 기록이 없어요."); return; }
-  fillItemInputs("pt", POINTS, last, false);
-};
+// 항목마다 "가장 최근에 적은 숫자" 찾기
+function latestPoint(key, beforeDate = "9999") {
+  const r = [...data.points]
+    .filter((x) => x.date < beforeDate && x[key] != null)
+    .sort((a, b) => b.date.localeCompare(a.date))[0];
+  return r ? r[key] : null;
+}
+// 날짜를 고르면:
+//  - 그날 기록이 있으면 → 그날 숫자와 메모를 칸에 (고치기)
+//  - 없으면 → 항목마다 마지막 숫자를 칸에 남겨 두고, 메모는 빈칸
 window.loadPointDay = function () {
-  const date = $("pt-date").value;
+  const date = $("pt-date").value || todayStr();
   const r = data.points.find((x) => x.date === date);
-  fillItemInputs("pt", POINTS, r || {});
-  pointLoaded = r ? date : null;
-  $("pt-title").textContent = r ? "✏️ " + niceDate(date) + " 포인트 고치기" : "✏️ 포인트 적기";
+  if (r) {
+    fillItemInputs("pt", POINTS, r);
+    pointLoaded = date;
+    $("pt-title").textContent = "✏️ " + niceDate(date) + " 포인트 고치기";
+  } else {
+    const last = {};
+    POINTS.forEach(([key]) => last[key] = latestPoint(key));
+    fillItemInputs("pt", POINTS, last);
+    pointLoaded = null;
+    $("pt-title").textContent = "✏️ 포인트 적기";
+  }
+  ptTouched = false;
 };
 window.editPoint = function (date) {
   $("pt-date").value = date;
@@ -1083,25 +1108,57 @@ window.addPoint = function () {
   if (pointLoaded !== date && data.points.some((r) => r.date === date)
       && !confirm(niceDate(date) + " 기록이 이미 있어요. 새 숫자로 바꿀까요?")) return;
   // 날짜를 이름표로 써서, 같은 날은 하나만 남아요
-  setDoc(doc(box("points"), date), rec).catch(saveFail);
-  fillItemInputs("pt", POINTS, {});
-  pointLoaded = null;
-  $("pt-title").textContent = "✏️ 포인트 적기";
+  setDoc(doc(box("points"), date), rec)
+    .then(() => alert(niceDate(date) + " 포인트를 저장했어요 🎁"))
+    .catch(saveFail);
+  ptTouched = false;   // 저장 뒤에도 숫자는 칸에 그대로 남아요
 };
+// 한 항목의 그날 기록만 지우기 (다른 항목은 그대로)
+window.delPointItem = function (date, key, name) {
+  const r = data.points.find((x) => x.date === date);
+  if (!r || !confirm(niceDate(date) + " " + name + " 기록을 지울까요?")) return;
+  const rest = { ...r }; delete rest.id;
+  rest[key] = null;
+  rest.memo = { ...(r.memo || {}) }; delete rest.memo[key];
+  const empty = POINTS.every(([k]) => rest[k] == null) && Object.keys(rest.memo).length === 0;
+  (empty ? deleteDoc(doc(box("points"), r.id)) : setDoc(doc(box("points"), r.id), rest)).catch(saveFail);
+};
+
+// 아래쪽 기록: 항목마다 날짜별 숫자와 변화(▲▼)를 보여줘요
 function drawPoint() {
   const list = [...data.points].sort((a, b) => b.date.localeCompare(a.date));
-  $("pt-list").innerHTML = list.length ? list.slice(0, 60).map((r) => `
-    <div class="list-item" style="align-items:flex-start">
-      <div class="main-txt">
-        <div class="small">${niceDate(r.date)}</div>
-        <div class="stock-box">${POINTS.map(([key, name]) => itemCell(r, key, name)).join("")}</div>
-      </div>
-      <div class="btn-col">
-        <button class="del" onclick="editPoint('${r.date}')">고치기</button>
-        <button class="del" onclick="delItem('points','${r.id}')">지우기</button>
-      </div>
-    </div>`).join("") : `<div class="empty">아직 포인트 기록이 없어요 🙂</div>`;
+  const html = POINTS.map(([key, name]) => {
+    const rows = list.filter((r) => r[key] != null || r.memo?.[key]);
+    if (!rows.length) return "";   // 기록이 하나도 없는 항목은 안 보여요
+    const nums = rows.filter((r) => r[key] != null);
+    const now = nums.length ? numStr(nums[0][key]) : "-";
+    return `
+    <div class="pt-group">
+      <div class="pt-head"><span class="item-name">${name}</span><span class="pt-now">지금 ${now}</span></div>
+      ${rows.slice(0, 30).map((r) => {
+        const before = latestPoint(key, r.date);   // 그 전 기록과 비교
+        const memo = r.memo?.[key];
+        return `
+        <div class="list-item pt-row">
+          <div class="main-txt">
+            <div class="small">${niceDate(r.date)}</div>
+            <div><b>${r[key] == null ? "-" : numStr(r[key])}</b>${r[key] == null ? "" : diffStr(r[key], before)}</div>
+            ${memo ? `<div class="memo">📝 ${safe(memo)}</div>` : ""}
+          </div>
+          <button class="del" onclick="editPoint('${r.date}')">고치기</button>
+          <button class="del" onclick="delPointItem('${r.date}','${key}','${name}')">지우기</button>
+        </div>`;
+      }).join("")}
+    </div>`;
+  }).join("");
+  $("pt-list").innerHTML = html || `<div class="empty">아직 포인트 기록이 없어요 🙂</div>`;
+  // 칸을 건드리지 않았으면 → 최신 숫자로 칸을 맞춰 둬요
+  if (!ptTouched) loadPointDay();
 }
+// 포인트 칸에 글자를 치면 "적는 중" 표시
+document.addEventListener("input", (e) => {
+  if (e.target.id && e.target.id.startsWith("pt-") && e.target.id !== "pt-date") ptTouched = true;
+});
 
 /* ============================================================
    🏃 운동 (자전거 · 악력기 · 탁구)
