@@ -184,6 +184,15 @@
   .pt-head .item-name { font-size: 20px; }
   .pt-now { font-size: 20px; font-weight: bold; }
   .pt-row { padding: 8px 0; }
+  /* 포인트 총액(4가지 합계) */
+  .pt-sum {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-top: 12px; padding: 12px 16px; border-radius: 14px;
+    background: #fff0f2; border: 2px solid #f0c9cf;
+  }
+  .pt-sum span { font-size: 18px; font-weight: bold; color: #b00020; }
+  .pt-sum b { font-size: 24px; }
+  .pt-total-group .pt-head { border-bottom-color: #b00020; }
   .ex-chip {
     display: inline-block; background: var(--bg); border-radius: 8px;
     padding: 2px 8px; margin: 3px 4px 0 0; font-size: 16px;
@@ -386,6 +395,8 @@
       <label>날짜</label>
       <input type="date" id="pt-date" onchange="loadPointDay()">
       <div class="grid2" id="pt-inputs"></div>
+      <!-- 💰 총액: 위 4가지 칸의 숫자를 더한 값 (저절로 계산돼요) -->
+      <div class="pt-sum"><span>💰 총액 (4가지 합계)</span><b id="pt-sum">-</b></div>
       <button class="big-btn" onclick="addPoint()">저장하기</button>
       <p class="note">칸에는 항목마다 <b>마지막으로 적은 숫자</b>가 늘 남아 있어요. 바뀐 항목만 고쳐서 저장하면 돼요.<br>
         메모는 안 써도 돼요. 메모를 쓴 날만 기록에 메모가 나와요.<br>
@@ -1108,7 +1119,29 @@ window.loadPointDay = function () {
     $("pt-title").textContent = "✏️ 포인트 적기";
   }
   ptTouched = false;
+  updatePointSum();   // 칸이 바뀌었으니 총액도 다시 계산
 };
+
+// 💰 칸에 적힌 4가지 숫자를 더해서 "총액"에 보여줘요
+function updatePointSum() {
+  let sum = 0, any = false;
+  POINTS.forEach(([key]) => {
+    const v = plain("pt-" + key);
+    if (v !== "" && !isNaN(Number(v))) { sum += Number(v); any = true; }
+  });
+  $("pt-sum").textContent = any ? numStr(sum) : "-";
+}
+
+// 💰 어떤 날짜의 총액 = 그날까지 항목마다 마지막으로 적은 숫자를 더한 값
+//    (그날 안 적은 항목은 그 전에 적은 숫자를 써요)
+function pointTotalOn(date) {
+  let sum = 0, any = false;
+  POINTS.forEach(([key]) => {
+    const v = latestPoint(key, date + "~");   // "~"를 붙이면 그날 기록까지 포함돼요
+    if (v != null) { sum += v; any = true; }
+  });
+  return any ? sum : null;
+}
 window.editPoint = function (date) {
   $("pt-date").value = date;
   loadPointDay();
@@ -1164,13 +1197,32 @@ function drawPoint() {
       }).join("")}
     </div>`;
   }).join("");
-  $("pt-list").innerHTML = html || `<div class="empty">아직 포인트 기록이 없어요 🙂</div>`;
+
+  // 💰 맨 위에 "총액" 묶음: 날짜마다 4가지 합계와 변화(▲▼)
+  const totals = list.map((r) => ({ date: r.date, sum: pointTotalOn(r.date) }))
+                     .filter((t) => t.sum != null);
+  const totalHtml = !totals.length ? "" : `
+    <div class="pt-group pt-total-group">
+      <div class="pt-head"><span class="item-name">💰 총액 (4가지 합계)</span><span class="pt-now">지금 ${numStr(totals[0].sum)}</span></div>
+      ${totals.slice(0, 30).map((t, i) => `
+        <div class="list-item pt-row">
+          <div class="main-txt">
+            <div class="small">${niceDate(t.date)}</div>
+            <div><b>${numStr(t.sum)}</b>${diffStr(t.sum, totals[i + 1]?.sum)}</div>
+          </div>
+        </div>`).join("")}
+    </div>`;
+
+  $("pt-list").innerHTML = (totalHtml + html) || `<div class="empty">아직 포인트 기록이 없어요 🙂</div>`;
   // 칸을 건드리지 않았으면 → 최신 숫자로 칸을 맞춰 둬요
   if (!ptTouched) loadPointDay();
 }
 // 포인트 칸에 글자를 치면 "적는 중" 표시
 document.addEventListener("input", (e) => {
-  if (e.target.id && e.target.id.startsWith("pt-") && e.target.id !== "pt-date") ptTouched = true;
+  if (e.target.id && e.target.id.startsWith("pt-") && e.target.id !== "pt-date") {
+    ptTouched = true;
+    updatePointSum();   // 숫자를 칠 때마다 총액이 바로 바뀌어요
+  }
 });
 
 /* ============================================================
