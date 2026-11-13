@@ -193,6 +193,34 @@
   .pt-sum span { font-size: 18px; font-weight: bold; color: #b00020; }
   .pt-sum b { font-size: 24px; }
   .pt-total-group .pt-head { border-bottom-color: #b00020; }
+
+  /* ---------- 📷 메모에 붙이는 사진 ---------- */
+  .photo-bar { display: flex; align-items: center; gap: 10px; margin-top: 6px; flex-wrap: wrap; }
+  .photo-btn {
+    border: 1px dashed #9fb0cc; background: #f8faff; color: var(--main);
+    border-radius: 10px; padding: 6px 12px; font-size: 15px; cursor: pointer;
+  }
+  .photo-thumb { position: relative; }
+  .photo-thumb img {
+    width: 60px; height: 60px; object-fit: cover; display: block;
+    border-radius: 8px; border: 1px solid var(--line); background: var(--bg); cursor: pointer;
+  }
+  .photo-thumb button {
+    position: absolute; top: -8px; right: -8px; width: 24px; height: 24px; border-radius: 50%;
+    border: 0; background: var(--red); color: #fff; font-size: 13px; cursor: pointer; padding: 0;
+  }
+  .photo-chip {
+    border: 0; background: #e8f0ff; color: var(--main); border-radius: 8px;
+    padding: 3px 10px; font-size: 14px; cursor: pointer; margin-top: 4px;
+  }
+  /* 사진 크게 보기 (화면 전체) */
+  #photo-view {
+    position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,.88);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 16px;
+  }
+  #photo-view[hidden] { display: none; }
+  #photo-view img { max-width: 100%; max-height: 82vh; border-radius: 8px; }
+  #photo-view p { color: #fff; font-size: 16px; margin: 12px 0 0; }
   .ex-chip {
     display: inline-block; background: var(--bg); border-radius: 8px;
     padding: 2px 8px; margin: 3px 4px 0 0; font-size: 16px;
@@ -235,6 +263,7 @@
       <input type="text" class="comma" id="m-amount" inputmode="numeric" placeholder="예: 15,000">
       <label>메모 (안 써도 돼요)</label>
       <input type="text" id="m-memo" placeholder="예: 마트 장보기">
+      <div class="photo-bar" id="ph-m"></div>
       <button class="big-btn" onclick="addMoney()">저장하기</button>
     </div>
 
@@ -272,6 +301,7 @@
       <input type="text" id="p-text" placeholder="예: 교육청 회의, 병원 예약">
       <label>📝 메모 (안 써도 돼요)</label>
       <textarea id="p-memo" rows="3" placeholder="예: 장소 - 교육청 3층 회의실&#10;참석 - 교감, 행정실장"></textarea>
+      <div class="photo-bar" id="ph-p"></div>
       <button class="big-btn" id="p-save" onclick="addPlan()">저장하기</button>
       <!-- 고치는 중일 때만 보이는 "그만두기" 버튼 -->
       <button class="big-btn gray-btn" id="p-cancel" onclick="cancelEditPlan()" hidden>고치기 그만두기</button>
@@ -468,6 +498,14 @@
   </section>
 </main>
 
+<!-- 📷 사진 고르기 칸 (숨어 있다가 "사진 붙이기"를 누르면 열려요) -->
+<input type="file" id="photo-in" accept="image/*" hidden onchange="photoChosen(this)">
+<!-- 📷 사진 크게 보기 (아무 데나 누르면 닫혀요) -->
+<div id="photo-view" hidden onclick="this.hidden = true">
+  <img id="photo-view-img" alt="붙인 사진">
+  <p id="photo-view-msg">아무 데나 누르면 닫혀요</p>
+</div>
+
 <!-- 아래쪽 탭 버튼 -->
 <nav>
   <button id="tab-money" onclick="showPage('money')"><span class="ico">💰</span>가계부</button>
@@ -502,7 +540,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-         collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch }
+         collection, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 // ---------- 0. 설정을 안 붙여 넣었으면 안내하기 ----------
@@ -632,6 +670,126 @@ function safe(t) {
   return String(t ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+/* ============================================================
+   📷 메모에 사진 붙이기
+   ------------------------------------------------------------
+   - 사진은 작게 줄여서 파이어베이스의 "photos" 서랍에 따로 넣어요.
+   - 기록에는 사진 번호만 적어 둬요.
+       가계부·일정: record.photo = "사진번호"
+       주식·포인트: record.photos = { 항목이름: "사진번호" }
+   - "칸(slot)"은 사진을 붙이는 자리 이름이에요.
+       "m" = 가계부, "p" = 일정, "s-항목" = 주식, "pt-항목" = 포인트
+   ============================================================ */
+const slots = {};        // 칸마다 붙어 있는 사진 번호
+const photoCache = {};   // 한 번 불러온 사진은 기억해 둬요 (다시 안 받아도 되게)
+let pickingSlot = null;  // 지금 사진을 고르고 있는 칸
+
+// 칸 안에 들어갈 모양: 사진이 없으면 "사진 붙이기" 버튼, 있으면 작은 사진 + ✕
+function photoBarInner(slot) {
+  const id = slots[slot];
+  if (!id) return `<button type="button" class="photo-btn" onclick="pickPhoto('${slot}')">📷 사진 붙이기</button>`;
+  return `<div class="photo-thumb">
+            <img id="phimg-${slot}" alt="붙인 사진" onclick="viewPhoto('${id}')">
+            <button type="button" onclick="clearPhoto('${slot}')" aria-label="사진 떼기">✕</button>
+          </div>
+          <button type="button" class="photo-btn" onclick="pickPhoto('${slot}')">📷 다른 사진으로</button>`;
+}
+// 칸을 새로 그리기
+function renderSlot(slot) {
+  const el = $("ph-" + slot);
+  if (!el) return;
+  el.innerHTML = photoBarInner(slot);
+  const id = slots[slot];
+  if (id) loadPhoto(id).then((src) => {
+    const im = $("phimg-" + slot);
+    if (im && slots[slot] === id) im.src = src;
+  }).catch(() => {});
+}
+// 칸에 사진 번호 넣기 (없애려면 null)
+function setSlot(slot, id) {
+  slots[slot] = id || null;
+  renderSlot(slot);
+}
+// 입력칸 HTML 안에 넣을 사진 자리
+const photoBarHtml = (slot) => `<div class="photo-bar" id="ph-${slot}">${photoBarInner(slot)}</div>`;
+
+// "사진 붙이기" 버튼 → 휴대폰 사진첩/카메라 열기
+window.pickPhoto = function (slot) {
+  pickingSlot = slot;
+  $("photo-in").click();
+};
+// ✕ 버튼 → 사진 떼기
+window.clearPhoto = function (slot) {
+  setSlot(slot, null);
+  if (slot.startsWith("pt-")) ptTouched = true;
+};
+
+// 사진을 골랐을 때: 작게 줄여서 → 파이어베이스에 올리고 → 칸에 붙이기
+window.photoChosen = async function (input) {
+  const file = input.files[0];
+  input.value = "";
+  const slot = pickingSlot;
+  if (!file || !slot) return;
+  const bar = $("ph-" + slot);
+  if (bar) bar.innerHTML = `<span class="note">⏳ 사진 준비 중…</span>`;
+  try {
+    const dataUrl = await shrinkImage(file);
+    const id = newId();
+    photoCache[id] = dataUrl;
+    setDoc(doc(box("photos"), id), { data: dataUrl, at: Date.now() })
+      .catch((e) => alert("사진을 저장하지 못했어요.\n파이어베이스 규칙(rules)을 확인해 주세요.\n(" + e.code + ")"));
+    setSlot(slot, id);
+    if (slot.startsWith("pt-")) ptTouched = true;   // 포인트 칸이 저절로 바뀌지 않게
+  } catch (e) {
+    alert("이 사진은 열 수 없어요. 다른 사진을 골라 주세요.");
+    renderSlot(slot);
+  }
+};
+
+// 사진을 작게 줄이기 (긴 쪽 1280px, 700KB 이하가 될 때까지 조금씩 더 줄여요)
+async function shrinkImage(file) {
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  await new Promise((ok, no) => { img.onload = ok; img.onerror = no; img.src = url; });
+  let max = 1280, q = 0.75, out = "";
+  for (let i = 0; i < 6; i++) {
+    const s = Math.min(1, max / Math.max(img.width, img.height));
+    const c = document.createElement("canvas");
+    c.width = Math.round(img.width * s);
+    c.height = Math.round(img.height * s);
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    out = c.toDataURL("image/jpeg", q);
+    if (out.length < 700000) break;
+    max = Math.round(max * 0.8);
+    q = Math.max(0.5, q - 0.1);
+  }
+  URL.revokeObjectURL(url);
+  return out;
+}
+
+// 사진 번호로 사진 불러오기
+async function loadPhoto(id) {
+  if (photoCache[id]) return photoCache[id];
+  const snap = await getDoc(doc(box("photos"), id));
+  if (!snap.exists()) throw new Error("사진 없음");
+  return (photoCache[id] = snap.data().data);
+}
+// 사진 크게 보기
+window.viewPhoto = function (id) {
+  $("photo-view-img").removeAttribute("src");
+  $("photo-view-msg").textContent = "⏳ 사진 불러오는 중…";
+  $("photo-view").hidden = false;
+  loadPhoto(id)
+    .then((src) => { $("photo-view-img").src = src; $("photo-view-msg").textContent = "아무 데나 누르면 닫혀요"; })
+    .catch(() => { $("photo-view-msg").textContent = "사진을 불러오지 못했어요 (누르면 닫혀요)"; });
+};
+// 기록 목록에 보이는 "📷 사진 보기" 버튼 (사진이 없으면 아무것도 안 나와요)
+const photoChip = (id) => id ? `<button class="photo-chip" onclick="viewPhoto('${id}')">📷 사진 보기</button>` : "";
+// 기록을 지울 때 붙어 있던 사진도 같이 지우기
+function delPhotos(ids) {
+  ids.filter(Boolean).forEach((id) => deleteDoc(doc(box("photos"), id)).catch(() => {}));
+}
+
 // ---------- 5. 탭 바꾸기 ----------
 window.showPage = function (name) {
   ["money", "plan", "bp", "weight", "stock", "pt", "ex", "set"].forEach((p) => {
@@ -665,8 +823,10 @@ window.addMoney = function () {
   const amount = Number(plain("m-amount"));
   if (!amount || amount <= 0) { alert("금액을 적어 주세요."); return; }
   const date = $("m-date").value || todayStr();
-  addRecord("money", { type: moneyType, date, cat: $("m-cat").value, amount, memo: $("m-memo").value.trim() }).catch(saveFail);
+  addRecord("money", { type: moneyType, date, cat: $("m-cat").value, amount, memo: $("m-memo").value.trim(),
+                       photo: slots.m || null }).catch(saveFail);
   $("m-amount").value = ""; $("m-memo").value = "";
+  setSlot("m", null);   // 사진 칸도 비우기
   viewMonth = date.slice(0, 7);
 };
 
@@ -700,6 +860,7 @@ function drawMoney() {
       <div class="main-txt">
         <div>${safe(r.cat)}${r.memo ? " · " + safe(r.memo) : ""}</div>
         <div class="small">${niceDate(r.date)}</div>
+        ${photoChip(r.photo)}
       </div>
       <div class="${r.type === "in" ? "money-in" : "money-out"}">${r.type === "in" ? "+" : "-"}${won(r.amount)}</div>
       <button class="del" onclick="delItem('money','${r.id}')">지우기</button>
@@ -719,14 +880,16 @@ window.addPlan = function () {
   const date = $("p-date").value || todayStr();
   const time = $("p-time").value;
   const memo = $("p-memo").value.trim();   // 장소·참석자 등 메모
+  const photo = slots.p || null;           // 메모에 붙인 사진
   if (editingPlanId) {
     // ✏️ 고치는 중이면 → 원래 기록을 새 내용으로 바꾸기
-    updateDoc(doc(box("plans"), editingPlanId), { date, time, text, memo }).catch(saveFail);
+    updateDoc(doc(box("plans"), editingPlanId), { date, time, text, memo, photo }).catch(saveFail);
     cancelEditPlan();
   } else {
     // ➕ 새 일정 저장
-    addRecord("plans", { date, time, text, memo, done: false }).catch(saveFail);
+    addRecord("plans", { date, time, text, memo, photo, done: false }).catch(saveFail);
     $("p-text").value = ""; $("p-time").value = ""; $("p-memo").value = "";
+    setSlot("p", null);
   }
   planMonth = date.slice(0, 7);   // 저장한 날짜의 달을 보여주기
   drawPlans();
@@ -741,6 +904,7 @@ window.editPlan = function (id) {
   $("p-time").value = p.time || "";
   $("p-text").value = p.text;
   $("p-memo").value = p.memo || "";
+  setSlot("p", p.photo);
   $("p-title").textContent = "✏️ 일정 고치기";
   $("p-save").textContent = "고친 내용 저장";
   $("p-cancel").hidden = false;
@@ -753,6 +917,7 @@ window.cancelEditPlan = function () {
   editingPlanId = null;
   $("p-text").value = ""; $("p-time").value = ""; $("p-memo").value = "";
   $("p-date").value = todayStr();
+  setSlot("p", null);
   $("p-title").textContent = "✏️ 할 일 / 약속 적기";
   $("p-save").textContent = "저장하기";
   $("p-cancel").hidden = true;
@@ -782,6 +947,7 @@ function planRow(p) {
       <div class="main-txt">
         <div>${p.time ? "<b>" + safe(p.time) + "</b> " : ""}${safe(p.text)}</div>
         ${p.memo ? `<div class="plan-memo">📝 ${safe(p.memo)}</div>` : ""}
+        ${photoChip(p.photo)}
       </div>
       <button class="del" onclick="editPlan('${p.id}')">고치기</button>
       <button class="del" onclick="delItem('plans','${p.id}')">지우기</button>
@@ -983,18 +1149,22 @@ function makeItemInputs(pre, items) {
       <label class="item-name">${name}</label>
       <input type="text" class="comma" id="${pre}-${key}" inputmode="decimal">
       <input type="text" class="memo-in" id="${pre}-${key}-memo" placeholder="📝 메모 (안 써도 돼요)">
+      ${photoBarHtml(pre + "-" + key)}
     </div>`).join("");
 }
 // 칸에 적힌 숫자와 메모를 읽어서 기록 만들기
 function readItemInputs(pre, items, rec) {
   let any = false;
   rec.memo = {};
+  rec.photos = {};
   items.forEach(([key]) => {
     const v = plain(pre + "-" + key);
     rec[key] = v === "" ? null : Number(v);
     const m = $(pre + "-" + key + "-memo").value.trim();
     if (m) rec.memo[key] = m;
-    if (v !== "" || m) any = true;
+    const ph = slots[pre + "-" + key];      // 그 항목에 붙인 사진
+    if (ph) rec.photos[key] = ph;
+    if (v !== "" || m || ph) any = true;
   });
   return any;   // 하나라도 적었으면 true
 }
@@ -1002,14 +1172,17 @@ function readItemInputs(pre, items, rec) {
 function fillItemInputs(pre, items, rec, withMemo = true) {
   items.forEach(([key]) => {
     $(pre + "-" + key).value = commaStr(rec[key]);
-    if (withMemo) $(pre + "-" + key + "-memo").value = rec.memo?.[key] ?? "";
+    if (withMemo) {
+      $(pre + "-" + key + "-memo").value = rec.memo?.[key] ?? "";
+      setSlot(pre + "-" + key, rec.photos?.[key]);   // 사진도 메모처럼 같이 채우기
+    }
   });
 }
 // 기록 목록에서 항목 하나 보여주기 (메모가 있을 때만 메모 표시)
 function itemCell(r, key, name) {
   const memo = r.memo?.[key];
   return `<div><span class="item-name">${name}</span> ${r[key] == null ? "-" : numStr(r[key])}`
-       + (memo ? `<div class="memo">📝 ${safe(memo)}</div>` : "") + `</div>`;
+       + (memo ? `<div class="memo">📝 ${safe(memo)}</div>` : "") + photoChip(r.photos?.[key]) + `</div>`;
 }
 
 function makeStockInputs() {
@@ -1166,7 +1339,11 @@ window.delPointItem = function (date, key, name) {
   const rest = { ...r }; delete rest.id;
   rest[key] = null;
   rest.memo = { ...(r.memo || {}) }; delete rest.memo[key];
-  const empty = POINTS.every(([k]) => rest[k] == null) && Object.keys(rest.memo).length === 0;
+  rest.photos = { ...(r.photos || {}) };
+  delPhotos([rest.photos[key]]);            // 그 항목에 붙은 사진도 지우기
+  delete rest.photos[key];
+  const empty = POINTS.every(([k]) => rest[k] == null) && Object.keys(rest.memo).length === 0
+             && Object.keys(rest.photos).length === 0;
   (empty ? deleteDoc(doc(box("points"), r.id)) : setDoc(doc(box("points"), r.id), rest)).catch(saveFail);
 };
 
@@ -1174,7 +1351,7 @@ window.delPointItem = function (date, key, name) {
 function drawPoint() {
   const list = [...data.points].sort((a, b) => b.date.localeCompare(a.date));
   const html = POINTS.map(([key, name]) => {
-    const rows = list.filter((r) => r[key] != null || r.memo?.[key]);
+    const rows = list.filter((r) => r[key] != null || r.memo?.[key] || r.photos?.[key]);
     if (!rows.length) return "";   // 기록이 하나도 없는 항목은 안 보여요
     const nums = rows.filter((r) => r[key] != null);
     const now = nums.length ? numStr(nums[0][key]) : "-";
@@ -1190,6 +1367,7 @@ function drawPoint() {
             <div class="small">${niceDate(r.date)}</div>
             <div><b>${r[key] == null ? "-" : numStr(r[key])}</b>${r[key] == null ? "" : diffStr(r[key], before)}</div>
             ${memo ? `<div class="memo">📝 ${safe(memo)}</div>` : ""}
+            ${photoChip(r.photos?.[key])}
           </div>
           <button class="del" onclick="editPoint('${r.date}')">고치기</button>
           <button class="del" onclick="delPointItem('${r.date}','${key}','${name}')">지우기</button>
@@ -1313,7 +1491,9 @@ function drawExercise() {
    ============================================================ */
 window.delItem = function (kind, id) {
   if (!confirm("정말 지울까요?")) return;
+  const r = data[kind].find((x) => x.id === id);
   deleteDoc(doc(box(kind), id)).catch(saveFail);
+  if (r) delPhotos([r.photo, ...Object.values(r.photos || {})]);   // 붙어 있던 사진도 같이 지우기
 };
 
 /* ============================================================
@@ -1377,6 +1557,7 @@ $("pt-date").value = todayStr();
 $("e-date").value = todayStr();
 makeStockInputs();
 $("pt-inputs").innerHTML = makeItemInputs("pt", POINTS);
+renderSlot("m"); renderSlot("p");   // 가계부·일정의 "사진 붙이기" 버튼 그리기
 setMoneyType("out");
 drawAll();
 </script>
