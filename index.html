@@ -116,6 +116,11 @@
   }
   .done .plan-memo { color: #aaa; }
   .date-head { font-weight: bold; color: var(--main); margin: 14px 0 2px; }
+  /* "지난 일정" 구분선 */
+  .past-head {
+    margin: 22px 0 4px; padding-top: 10px; border-top: 2px dashed #ccc;
+    color: #888; font-weight: bold; font-size: 15px;
+  }
   .today-tag {
     background: var(--orange); color: #fff; font-size: 12px; border-radius: 6px;
     padding: 1px 6px; margin-left: 6px;
@@ -796,11 +801,44 @@ window.showPage = function (name) {
     $("page-" + p).hidden = (p !== name);
     $("tab-" + p).classList.toggle("on", p === name);
   });
+  resetToToday(name);   // 탭을 열 때마다 날짜를 "오늘"로
   if (name === "bp") drawChart();
   if (name === "weight") drawWeight();
   if (name === "stock") drawStock();
   window.scrollTo(0, 0);
 };
+
+/* ------------------------------------------------------------
+   📆 날짜를 항상 "오늘"로 맞추기
+   - 탭을 누를 때 → 그 탭의 날짜를 오늘로
+   - 앱을 다시 열 때(홈 화면에서 다시 들어올 때) → 모든 탭을 오늘로
+   - 마지막으로 적은 날짜가 남아 있지 않게 해 줘요
+   ------------------------------------------------------------ */
+let currentPage = "plan";   // 지금 보고 있는 탭
+function resetToToday(name) {
+  currentPage = name;
+  const t = todayStr();
+  if (name === "money") {
+    $("m-date").value = t;
+    viewMonth = t.slice(0, 7); drawMoney();
+  }
+  if (name === "plan" && !editingPlanId) {   // 일정 "고치기" 중이면 그대로 둬요
+    $("p-date").value = t;
+    planMonth = t.slice(0, 7); drawPlans();
+  }
+  if (name === "bp")     { $("b-date").value = t; $("b-time").value = nowTime(); }
+  if (name === "weight") { $("w-date").value = t; }
+  if (name === "stock")  { $("s-date").value = t; loadStockDay(); }
+  if (name === "pt")     { $("pt-date").value = t; loadPointDay(); }
+  if (name === "ex") {
+    $("e-date").value = t; fillExercise();
+    exMonth = t.slice(0, 7); drawExercise();
+  }
+}
+// 앱을 다시 열면(다른 앱 갔다 오거나, 다음 날 다시 켜면) 지금 탭을 오늘로
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") resetToToday(currentPage);
+});
 
 /* ============================================================
    💰 가계부
@@ -965,14 +1003,32 @@ function groupByDate(list) {
   });
   return html;
 }
-// 고른 달(planMonth)의 일정만, 1일부터 날짜 순서대로 보여주기
+// 고른 달(planMonth)의 일정을 이런 순서로 보여주기
+//   ① 오늘 일정 (맨 위)
+//   ② 앞으로 할 일정: 내일 → 모레 → … → 월말 (가까운 날부터)
+//   ③ 지난 일정: 어제 → 그저께 → … (최근 날부터 거꾸로)
+//   같은 날 안에서는 시간 순서 (시간 없는 일정은 그날 맨 아래)
 function drawPlans() {
   const [y, m] = planMonth.split("-");
   $("p-month").textContent = y + "년 " + Number(m) + "월";
-  const key = (p) => p.date + " " + (p.time || "99:99");
-  const list = data.plans.filter((p) => p.date.startsWith(planMonth))
-                         .sort((a, b) => key(a).localeCompare(key(b)));
-  $("plan-list").innerHTML = list.length ? groupByDate(list) : `<div class="empty">이 달에는 일정이 없어요 🙂</div>`;
+  const today = todayStr();
+  const tm = (p) => p.time || "99:99";
+  const monthList = data.plans.filter((p) => p.date.startsWith(planMonth));
+
+  // 오늘 + 앞으로: 날짜 빠른 순 → 시간 순
+  const upcoming = monthList.filter((p) => p.date >= today)
+    .sort((a, b) => (a.date + tm(a)).localeCompare(b.date + tm(b)));
+  // 지난 일정: 날짜 늦은 순(최근부터) → 같은 날은 시간 순
+  const past = monthList.filter((p) => p.date < today)
+    .sort((a, b) => b.date.localeCompare(a.date) || tm(a).localeCompare(tm(b)));
+
+  let html = "";
+  if (upcoming.length) html += groupByDate(upcoming);
+  if (past.length) {
+    if (upcoming.length) html += `<div class="past-head">⏪ 지난 일정</div>`;
+    html += groupByDate(past);
+  }
+  $("plan-list").innerHTML = html || `<div class="empty">이 달에는 일정이 없어요 🙂</div>`;
 }
 
 /* ============================================================
