@@ -173,6 +173,8 @@
   /* ---------- 📊 주식 · 🎁 포인트: 항목 이름(진한 빨강)과 메모 ---------- */
   .item-name, .stock-box .item-name { color: #b00020; font-weight: bold; }
   label.item-name { font-size: 17px; }
+  /* 한글 입력 칸: 컴퓨터(윈도우)에서는 한글 입력으로 시작해요 */
+  .ko-in { ime-mode: active; }
   input.memo-in { font-size: 15px; padding: 6px 10px; margin-top: 4px; background: #fffaf0; }
   .memo {
     font-size: 14px; color: #6b5a3a; background: #fff4dc; border-radius: 6px;
@@ -267,7 +269,7 @@
       <label>금액 (원)</label>
       <input type="text" class="comma" id="m-amount" inputmode="numeric" placeholder="예: 15,000">
       <label>메모 (안 써도 돼요)</label>
-      <input type="text" id="m-memo" placeholder="예: 마트 장보기">
+      <input type="text" id="m-memo" class="ko-in" lang="ko" inputmode="text" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="예: 마트 장보기">
       <div class="photo-bar" id="ph-m"></div>
       <button class="big-btn" onclick="addMoney()">저장하기</button>
     </div>
@@ -303,9 +305,9 @@
         <div><label>시간 (안 써도 돼요)</label><input type="time" id="p-time"></div>
       </div>
       <label>내용</label>
-      <input type="text" id="p-text" placeholder="예: 교육청 회의, 병원 예약">
+      <input type="text" id="p-text" class="ko-in" lang="ko" inputmode="text" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="예: 교육청 회의, 병원 예약">
       <label>📝 메모 (안 써도 돼요)</label>
-      <textarea id="p-memo" rows="3" placeholder="예: 장소 - 교육청 3층 회의실&#10;참석 - 교감, 행정실장"></textarea>
+      <textarea id="p-memo" class="ko-in" lang="ko" inputmode="text" autocapitalize="off" autocorrect="off" spellcheck="false" rows="3" placeholder="예: 장소 - 교육청 3층 회의실&#10;참석 - 교감, 행정실장"></textarea>
       <div class="photo-bar" id="ph-p"></div>
       <button class="big-btn" id="p-save" onclick="addPlan()">저장하기</button>
       <!-- 고치는 중일 때만 보이는 "그만두기" 버튼 -->
@@ -1204,7 +1206,7 @@ function makeItemInputs(pre, items) {
     <div>
       <label class="item-name">${name}</label>
       <input type="text" class="comma" id="${pre}-${key}" inputmode="decimal">
-      <input type="text" class="memo-in" id="${pre}-${key}-memo" placeholder="📝 메모 (안 써도 돼요)">
+      <input type="text" class="memo-in ko-in" lang="ko" inputmode="text" autocapitalize="off" autocorrect="off" spellcheck="false" id="${pre}-${key}-memo" placeholder="📝 메모 (안 써도 돼요)">
       ${photoBarHtml(pre + "-" + key)}
     </div>`).join("");
 }
