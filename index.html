@@ -140,6 +140,13 @@
   #login-screen[hidden] { display: none; }
   #login-screen .card { max-width: 420px; width: 100%; text-align: center; padding: 28px 22px; }
   #login-screen .logo { font-size: 56px; }
+  /* 📈 주식 최근 7일 표 */
+  .s-table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  .s-table th { background: #f0f2f7; color: var(--sub); font-weight: normal; padding: 8px 4px; }
+  .s-table td { padding: 9px 4px; border-bottom: 1px solid var(--line); text-align: right; }
+  .s-table td:first-child, .s-table th:first-child { text-align: left; }
+  .s-table .t-up { color: #d64545; }   /* 올랐을 때 빨강 */
+  .s-table .t-down { color: #2b6fd6; } /* 내렸을 때 파랑 */
   /* 주식 입력칸 2줄씩 */
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
   .stock-box { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 14px; font-size: 15px; margin-top: 6px; }
@@ -413,9 +420,9 @@
         날짜를 고르거나 기록의 <b>고치기</b>를 누르면, 그날 숫자와 메모가 칸에 나와서 고칠 수 있어요.</p>
     </div>
     <div class="card">
-      <h2>📈 총액 그래프</h2>
-      <canvas id="s-chart" width="680" height="220"></canvas>
-      <div class="note">최근 30번 기록</div>
+      <h2>📈 최근 7일 총액</h2>
+      <div id="s-table"></div>
+      <div class="note">바로 전 기록과 비교한 금액이에요. 빨강 ▲ = 올랐어요, 파랑 ▼ = 내렸어요.</div>
     </div>
     <div class="card">
       <h2>📋 주식 기록</h2>
@@ -1244,6 +1251,8 @@ function itemCell(r, key, name) {
 }
 
 function makeStockInputs() {
+  // 칸에 뭔가 적기 시작하면, 자동으로 다시 채우지 않게 표시해 둬요
+  $("s-inputs").addEventListener("input", () => { stockTyped = true; });
   let html = makeItemInputs("s", STOCKS);
   html += `<div><label>환율</label><input type="text" class="comma" id="s-fx" inputmode="decimal" placeholder="예: 1,380"></div>`;
   html += `<div><label><b>총액</b></label><input type="text" class="comma" id="s-total" inputmode="decimal"></div>`;
@@ -1259,14 +1268,31 @@ window.fillLastStock = function () {
 };
 // 날짜를 고르면 → 그날 기록(숫자+메모)을 칸에 채워요. 없으면 빈칸.
 let stockLoaded = null;   // 칸에 불러온 기록의 날짜
+let stockTyped = false;   // 사람이 칸에 직접 뭔가 적었는지 (적었으면 자동으로 덮어쓰지 않아요)
 window.loadStockDay = function () {
+  if (!$("s-date").value) $("s-date").value = todayStr();   // 날짜가 비어 있으면 오늘
   const date = $("s-date").value;
   const r = data.stocks.find((x) => x.date === date);
-  fillItemInputs("s", STOCKS, r || {});
-  $("s-fx").value = commaStr(r?.fx);
-  $("s-total").value = commaStr(r?.total);
-  stockLoaded = r ? date : null;
-  $("s-title").textContent = r ? "✏️ " + niceDate(date) + " 주식 기록 고치기" : "✏️ 주식 금액 적기";
+  stockTyped = false;
+  if (r) {
+    // 그날 기록이 있으면 → 그날 숫자 + 메모
+    fillItemInputs("s", STOCKS, r);
+    $("s-fx").value = commaStr(r.fx);
+    $("s-total").value = commaStr(r.total);
+    stockLoaded = date;
+    $("s-title").textContent = "✏️ " + niceDate(date) + " 주식 기록 고치기";
+    return;
+  }
+  // 그날 기록이 없으면 → 그 전 가장 최근 기록의 숫자를 미리 채워 둬요 (메모·사진은 빈칸)
+  const prev = [...data.stocks].filter((x) => x.date < date)
+                               .sort((a, b) => b.date.localeCompare(a.date))[0];
+  fillItemInputs("s", STOCKS, {});
+  if (prev) fillItemInputs("s", STOCKS, prev, false);
+  $("s-fx").value = commaStr(prev?.fx);
+  $("s-total").value = commaStr(prev?.total);
+  stockLoaded = null;
+  $("s-title").textContent = prev ? "✏️ 주식 금액 적기 (" + niceDate(prev.date) + " 숫자를 불러왔어요)"
+                                  : "✏️ 주식 금액 적기";
 };
 // 목록의 "고치기" 버튼
 window.editStock = function (date) {
@@ -1286,10 +1312,10 @@ window.addStock = function () {
   if (stockLoaded !== date && data.stocks.some((r) => r.date === date)
       && !confirm(niceDate(date) + " 기록이 이미 있어요. 새 숫자로 바꿀까요?")) return;
   setDoc(doc(box("stocks"), date), rec).catch(saveFail);
-  fillItemInputs("s", STOCKS, {});
-  $("s-fx").value = ""; $("s-total").value = "";
-  stockLoaded = null;
-  $("s-title").textContent = "✏️ 주식 금액 적기";
+  // 저장한 숫자는 칸에 그대로 남겨 둬요 (지우지 않아요)
+  stockLoaded = date;
+  stockTyped = false;
+  $("s-title").textContent = "✏️ " + niceDate(date) + " 주식 기록 고치기";
 };
 
 function drawStock() {
@@ -1309,7 +1335,29 @@ function drawStock() {
       </div>
     </div>`;
   }).join("") : `<div class="empty">아직 주식 기록이 없어요 🙂</div>`;
-  drawLineChart("s-chart", list.filter((r) => r.total != null).slice(0, 30).reverse(), "total", "#7b4bd1");
+  drawStockTable(list);
+  // 인터넷에서 기록이 늦게 도착해도, 아직 아무것도 안 적었으면 칸을 다시 채워요
+  if (!stockTyped) loadStockDay();
+}
+
+// 📈 최근 7일 총액 표: 날짜 | 총액 | 전날 대비 | 등락률
+function drawStockTable(list) {
+  const rows = list.filter((r) => r.total != null);   // 총액이 적힌 기록만 (최신이 맨 위)
+  if (!rows.length) { $("s-table").innerHTML = `<div class="empty">아직 총액 기록이 없어요 🙂</div>`; return; }
+  const body = rows.slice(0, 7).map((r, i) => {
+    const before = rows[i + 1]?.total;                  // 바로 전 기록의 총액
+    let diff = "-", rate = "-", cls = "";
+    if (before != null) {
+      const d = r.total - before;
+      cls = d > 0 ? "t-up" : d < 0 ? "t-down" : "";
+      diff = d === 0 ? "0" : (d > 0 ? "▲ " : "▼ ") + numStr(Math.abs(d));
+      rate = before === 0 ? "-" : (d > 0 ? "+" : "") + (d / before * 100).toFixed(2) + "%";
+    }
+    return `<tr><td>${r.date.slice(5).replace("-", "/")}</td><td>${numStr(r.total)}</td>
+            <td class="${cls}">${diff}</td><td class="${cls}">${rate}</td></tr>`;
+  }).join("");
+  $("s-table").innerHTML = `<table class="s-table">
+    <tr><th>날짜</th><th>총액</th><th>전날 대비</th><th>등락률</th></tr>${body}</table>`;
 }
 
 /* ============================================================
