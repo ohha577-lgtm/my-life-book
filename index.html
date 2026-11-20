@@ -131,6 +131,16 @@
   .b-ok { background: var(--green); } .b-care { background: #c9a400; }
   .b-pre { background: var(--orange); } .b-high { background: var(--red); }
   .note { font-size: 14px; color: var(--sub); margin-top: 8px; }
+  /* 전화 탭 */
+  .c-filter { display: flex; flex-wrap: wrap; gap: 6px; }
+  .c-chip { border: 1.5px solid var(--line); background: #fff; border-radius: 20px; padding: 7px 13px; font-size: 15px; color: #333; cursor: pointer; }
+  .c-chip small { color: #999; margin-left: 2px; }
+  .c-chip.on { color: #fff; font-weight: bold; }
+  .c-chip.on small { color: rgba(255,255,255,.85); }
+  .call-item { align-items: flex-start; }
+  .c-name { font-size: 18px; margin: 0 4px; cursor: pointer; }
+  .c-text { white-space: pre-line; margin-top: 6px; line-height: 1.5; font-size: 16px; color: #333; background: var(--bg); border-radius: 8px; padding: 8px 10px; }
+
   canvas { width: 100%; height: auto; display: block; }
   /* 로그인 화면 (로그인 전에는 이것만 보여요) */
   #login-screen {
@@ -334,47 +344,38 @@
   </section>
 
   <!-- ======================================================
-       ③ 혈압 화면
+       ③ 전화 화면 (예전 혈압 자리)
        ====================================================== -->
-  <section id="page-bp" hidden>
+  <section id="page-call" hidden>
     <div class="card">
-      <h2>✏️ 혈압 적기</h2>
+      <h2 id="c-title">📞 통화 적기</h2>
       <div class="row">
-        <div><label>날짜</label><input type="date" id="b-date"></div>
-        <div><label>시간</label><input type="time" id="b-time"></div>
+        <div><label>날짜</label><input type="date" id="c-date"></div>
+        <div><label>시간</label><input type="time" id="c-time"></div>
       </div>
       <div class="row">
-        <div><label>높은 숫자 (수축기)</label><input type="number" id="b-sys" inputmode="numeric" placeholder="예: 125"></div>
-        <div><label>낮은 숫자 (이완기)</label><input type="number" id="b-dia" inputmode="numeric" placeholder="예: 82"></div>
-      </div>
-      <div class="row">
-        <div><label>맥박 (안 써도 돼요)</label><input type="number" id="b-pulse" inputmode="numeric" placeholder="예: 70"></div>
         <div>
-          <label>언제 쟀나요?</label>
-          <select id="b-when">
-            <option>아침</option><option>점심</option><option>저녁</option><option>자기 전</option>
-          </select>
+          <label>조직</label>
+          <select id="c-org"></select>
+        </div>
+        <div>
+          <label>성명</label>
+          <input id="c-name" class="ko-in" list="c-names" placeholder="예: 홍길동" oninput="callNamePicked()">
+          <datalist id="c-names"></datalist>
         </div>
       </div>
-      <button class="big-btn" onclick="addBP()">저장하기</button>
+      <label>대화 내용</label>
+      <textarea id="c-text" class="ko-in" rows="4" placeholder="무슨 이야기를 했나요?"></textarea>
+      <button class="big-btn" id="c-save" onclick="saveCall()">저장하기</button>
+      <button class="big-btn gray-btn" id="c-cancel" onclick="cancelEditCall()" hidden>고치기 그만두기</button>
     </div>
 
     <div class="card">
-      <h2>📈 최근 혈압 그래프</h2>
-      <canvas id="bp-chart" width="680" height="220"></canvas>
-      <div class="note">
-        <span style="color:var(--red)">●</span> 높은 숫자 &nbsp;
-        <span style="color:var(--main)">●</span> 낮은 숫자 &nbsp;(최근 14번)
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>📋 혈압 기록</h2>
-      <div id="bp-list"></div>
-      <div class="note">
-        ※ 표시는 참고용이에요. (정상 120/80 미만 · 주의 120~129 · 고혈압 전단계 130~139/80~89 · 고혈압 140/90 이상)<br>
-        걱정되는 숫자가 계속 나오면 꼭 병원에서 상담하세요.
-      </div>
+      <h2>📋 통화 기록</h2>
+      <div class="c-filter" id="c-orgs"></div>
+      <input id="c-find" class="ko-in" placeholder="🔍 이름이나 내용으로 찾기" oninput="drawCalls()" style="margin-top:8px">
+      <div id="c-info" class="note"></div>
+      <div id="call-list"></div>
     </div>
   </section>
 
@@ -524,7 +525,7 @@
 <nav>
   <button id="tab-money" onclick="showPage('money')"><span class="ico">💰</span>가계부</button>
   <button id="tab-plan" class="on" onclick="showPage('plan')"><span class="ico">📅</span>일정</button>
-  <button id="tab-bp" onclick="showPage('bp')"><span class="ico">❤️</span>혈압</button>
+  <button id="tab-call" onclick="showPage('call')"><span class="ico">📞</span>전화</button>
   <button id="tab-weight" onclick="showPage('weight')"><span class="ico">⚖️</span>몸무게</button>
   <button id="tab-stock" onclick="showPage('stock')"><span class="ico">📊</span>주식</button>
   <button id="tab-pt" onclick="showPage('pt')"><span class="ico">🎁</span>포인트</button>
@@ -574,8 +575,8 @@ const db = initializeFirestore(app, {
 });
 
 // 지금 화면에 보여줄 기록 (파이어베이스에서 받아와서 채워요)
-const KINDS = ["money", "plans", "bp", "weight", "stocks", "points", "exercise"];   // 기록 종류 7가지
-let data = { money: [], plans: [], bp: [], weight: [], stocks: [], points: [], exercise: [] };
+const KINDS = ["money", "plans", "bp", "weight", "stocks", "points", "exercise", "calls"];   // 기록 종류 8가지 (bp=예전 혈압: 화면에서는 뺐지만 기록은 남겨 둬요)
+let data = { money: [], plans: [], bp: [], weight: [], stocks: [], points: [], exercise: [], calls: [] };
 let me = null;            // 로그인한 사람
 let stopListen = [];      // 기록 받아오기 멈추는 스위치들
 
@@ -609,7 +610,7 @@ onAuthStateChanged(auth, (user) => {
   me = user;
   if (!user) {
     $("login-screen").hidden = false;
-    data = { money: [], plans: [], bp: [], weight: [], stocks: [], points: [], exercise: [] };
+    data = { money: [], plans: [], bp: [], weight: [], stocks: [], points: [], exercise: [], calls: [] };
     return;
   }
   $("login-screen").hidden = true;
@@ -806,12 +807,11 @@ function delPhotos(ids) {
 
 // ---------- 5. 탭 바꾸기 ----------
 window.showPage = function (name) {
-  ["money", "plan", "bp", "weight", "stock", "pt", "ex", "set"].forEach((p) => {
+  ["money", "plan", "call", "weight", "stock", "pt", "ex", "set"].forEach((p) => {
     $("page-" + p).hidden = (p !== name);
     $("tab-" + p).classList.toggle("on", p === name);
   });
   resetToToday(name);   // 탭을 열 때마다 날짜를 "오늘"로
-  if (name === "bp") drawChart();
   if (name === "weight") drawWeight();
   if (name === "stock") drawStock();
   window.scrollTo(0, 0);
@@ -835,7 +835,7 @@ function resetToToday(name) {
     $("p-date").value = t;
     planMonth = t.slice(0, 7); drawPlans();
   }
-  if (name === "bp")     { $("b-date").value = t; $("b-time").value = nowTime(); }
+  if (name === "call" && !editingCallId) { $("c-date").value = t; $("c-time").value = nowTime(); }
   if (name === "weight") { $("w-date").value = t; }
   if (name === "stock")  { $("s-date").value = t; loadStockDay(); }
   if (name === "pt")     { $("pt-date").value = t; loadPointDay(); }
@@ -1041,79 +1041,110 @@ function drawPlans() {
 }
 
 /* ============================================================
-   ❤️ 혈압
+   📞 전화 (언제 · 누구랑 · 무슨 이야기)
+   ------------------------------------------------------------
+   - 조직 목록을 바꾸고 싶으면 아래 ORGS 줄만 고치면 돼요.
+   - 기록은 파이어베이스의 "calls" 서랍에 들어가요.
    ============================================================ */
-function bpLevel(sys, dia) {
-  if (sys >= 140 || dia >= 90) return { t: "고혈압", c: "b-high" };
-  if (sys >= 130 || dia >= 80) return { t: "고혈압 전단계", c: "b-pre" };
-  if (sys >= 120)              return { t: "주의", c: "b-care" };
-  return { t: "정상", c: "b-ok" };
-}
+const ORGS = ["고교동창", "대입지원단", "마석중", "다산고", "친척", "기타"];
+const ORG_COLOR = { "고교동창": "#2b6fd6", "대입지원단": "#7a4fc9", "마석중": "#2e9d5b", "다산고": "#d9821b", "친척": "#d64545", "기타": "#8a93a3" };
+let editingCallId = null;   // 고치는 중인 통화 기록 번호
+let callOrg = "전체";        // 목록에서 고른 조직
 
-window.addBP = function () {
-  const sys = Number($("b-sys").value), dia = Number($("b-dia").value);
-  if (!sys || !dia) { alert("높은 숫자와 낮은 숫자를 모두 적어 주세요."); return; }
-  if (sys < 50 || sys > 260 || dia < 30 || dia > 180) {
-    if (!confirm("숫자가 평소와 많이 달라요. 이대로 저장할까요?")) return;
-  }
-  addRecord("bp", {
-    date: $("b-date").value || todayStr(), time: $("b-time").value || nowTime(),
-    sys, dia, pulse: Number($("b-pulse").value) || null, when: $("b-when").value
-  }).catch(saveFail);
-  $("b-sys").value = ""; $("b-dia").value = ""; $("b-pulse").value = "";
+$("c-org").innerHTML = ORGS.map((o) => `<option>${o}</option>`).join("");
+
+// 전에 통화한 사람 이름을 고르면 조직도 알아서 맞춰 줘요
+window.callNamePicked = function () {
+  const name = $("c-name").value.trim();
+  const last = sortedCalls().find((r) => r.name === name);
+  if (last && ORGS.includes(last.org)) $("c-org").value = last.org;
 };
 
-function sortedBP() {
-  return [...data.bp].sort((a, b) => (b.date + b.time + b.id).localeCompare(a.date + a.time + a.id));
+window.saveCall = function () {
+  const name = $("c-name").value.trim(), text = $("c-text").value.trim();
+  if (!name) { alert("누구랑 통화했는지 성명을 적어 주세요."); $("c-name").focus(); return; }
+  const rec = {
+    date: $("c-date").value || todayStr(), time: $("c-time").value || "",
+    org: $("c-org").value, name, text
+  };
+  if (editingCallId) {
+    setDoc(doc(box("calls"), editingCallId), rec).catch(saveFail);
+    cancelEditCall();
+  } else {
+    addRecord("calls", rec).catch(saveFail);
+    $("c-name").value = ""; $("c-text").value = "";
+    $("c-time").value = nowTime();
+  }
+};
+
+// "고치기" → 위쪽 입력칸에 그 기록을 채워 넣어요
+window.editCall = function (id) {
+  const r = data.calls.find((x) => x.id === id);
+  if (!r) return;
+  editingCallId = id;
+  $("c-date").value = r.date; $("c-time").value = r.time || "";
+  $("c-org").value = ORGS.includes(r.org) ? r.org : "기타";
+  $("c-name").value = r.name || ""; $("c-text").value = r.text || "";
+  $("c-title").textContent = "✏️ 통화 기록 고치기";
+  $("c-save").textContent = "고친 내용 저장";
+  $("c-cancel").hidden = false;
+  window.scrollTo(0, 0);
+  $("c-text").focus();
+};
+window.cancelEditCall = function () {
+  editingCallId = null;
+  $("c-name").value = ""; $("c-text").value = "";
+  $("c-date").value = todayStr(); $("c-time").value = nowTime();
+  $("c-title").textContent = "📞 통화 적기";
+  $("c-save").textContent = "저장하기";
+  $("c-cancel").hidden = true;
+};
+
+// 목록에서 조직 고르기 / 사람 이름을 누르면 그 사람 통화만 보기
+window.pickCallOrg = function (o) { callOrg = o; drawCalls(); };
+window.findCallName = function (name) { $("c-find").value = name; drawCalls(); };
+
+function sortedCalls() {
+  return [...data.calls].sort((a, b) => ((b.date || "") + (b.time || "") + b.id).localeCompare((a.date || "") + (a.time || "") + a.id));
 }
-function drawBP() {
-  const list = sortedBP();
-  $("bp-list").innerHTML = list.length ? list.slice(0, 60).map((r) => {
-    const lv = bpLevel(r.sys, r.dia);
-    return `
-      <div class="list-item">
+window.drawCalls = drawCalls;   // 찾기 칸에서 부를 수 있게
+function drawCalls() {
+  const all = sortedCalls();
+  // 이름 자동 완성 목록
+  $("c-names").innerHTML = [...new Set(all.map((r) => r.name).filter(Boolean))].map((n) => `<option value="${safe(n)}">`).join("");
+  // 조직 버튼 (개수 함께)
+  const cnt = (o) => all.filter((r) => r.org === o).length;
+  $("c-orgs").innerHTML = ["전체", ...ORGS].map((o) => {
+    const n = o === "전체" ? all.length : cnt(o);
+    const on = callOrg === o;
+    const col = ORG_COLOR[o] || "var(--main)";
+    return `<button class="c-chip${on ? " on" : ""}" style="${on ? `background:${col};border-color:${col}` : ""}" onclick="pickCallOrg('${o}')">${o} <small>${n}</small></button>`;
+  }).join("");
+  // 고른 조직 + 찾는 말로 걸러내기
+  const q = $("c-find").value.trim();
+  const list = all.filter((r) => (callOrg === "전체" || r.org === callOrg) &&
+    (!q || (r.name || "").includes(q) || (r.text || "").includes(q)));
+  $("c-info").textContent = (callOrg !== "전체" || q) ? `찾은 기록 ${list.length}개` + (q ? ` · "${q}"` : "") : "";
+  let html = "", lastDate = "";
+  list.slice(0, 150).forEach((r) => {
+    if (r.date !== lastDate) { html += `<div class="date-head">${niceDate(r.date)}</div>`; lastDate = r.date; }
+    const col = ORG_COLOR[r.org] || "#8a93a3";
+    html += `
+      <div class="list-item call-item">
         <div class="main-txt">
-          <div><b style="font-size:20px">${r.sys} / ${r.dia}</b>${r.pulse ? ` <span class="small">맥박 ${r.pulse}</span>` : ""}</div>
-          <div class="small">${niceDate(r.date)} ${safe(r.time)} · ${safe(r.when)}</div>
+          <div><span class="badge" style="background:${col}">${safe(r.org)}</span>
+            <b class="c-name" onclick="findCallName(this.textContent)">${safe(r.name)}</b>
+            <span class="small">${safe(r.time)}</span></div>
+          ${r.text ? `<div class="c-text">${safe(r.text)}</div>` : ""}
         </div>
-        <span class="badge ${lv.c}">${lv.t}</span>
-        <button class="del" onclick="delItem('bp','${r.id}')">지우기</button>
+        <div class="btn-col">
+          <button class="del" style="background:#eef3ff;color:var(--main)" onclick="editCall('${r.id}')">고치기</button>
+          <button class="del" onclick="delItem('calls','${r.id}')">지우기</button>
+        </div>
       </div>`;
-  }).join("") : `<div class="empty">아직 혈압 기록이 없어요 🙂</div>`;
-  drawChart();
-}
-function drawChart() {
-  const cv = $("bp-chart");
-  if (!cv || $("page-bp").hidden) return;
-  const ctx = cv.getContext("2d");
-  const W = cv.width, H = cv.height, padL = 52, padR = 12, padT = 14, padB = 34;
-  ctx.clearRect(0, 0, W, H);
-  ctx.font = "22px sans-serif";
-  const pts = sortedBP().slice(0, 14).reverse();
-  if (pts.length < 2) {
-    ctx.fillStyle = "#888"; ctx.textAlign = "center";
-    ctx.fillText("기록이 2개 이상 있으면 그래프가 나와요", W / 2, H / 2);
-    return;
-  }
-  const minV = 50, maxV = 190;
-  const x = (i) => padL + (W - padL - padR) * (i / (pts.length - 1));
-  const y = (v) => padT + (H - padT - padB) * (1 - (Math.min(Math.max(v, minV), maxV) - minV) / (maxV - minV));
-  [60, 80, 100, 120, 140, 160, 180].forEach((v) => {
-    ctx.strokeStyle = (v === 140) ? "#f3b4b4" : "#eee"; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(padL, y(v)); ctx.lineTo(W - padR, y(v)); ctx.stroke();
-    ctx.fillStyle = "#999"; ctx.textAlign = "right"; ctx.fillText(v, padL - 8, y(v) + 7);
   });
-  function line(key, color) {
-    ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.beginPath();
-    pts.forEach((p, i) => (i ? ctx.lineTo(x(i), y(p[key])) : ctx.moveTo(x(i), y(p[key]))));
-    ctx.stroke(); ctx.fillStyle = color;
-    pts.forEach((p, i) => { ctx.beginPath(); ctx.arc(x(i), y(p[key]), 4, 0, Math.PI * 2); ctx.fill(); });
-  }
-  line("sys", "#d64545");
-  line("dia", "#2b6fd6");
-  ctx.fillStyle = "#888";
-  ctx.textAlign = "left";  ctx.fillText(pts[0].date.slice(5).replace("-", "/"), padL, H - 6);
-  ctx.textAlign = "right"; ctx.fillText(pts[pts.length - 1].date.slice(5).replace("-", "/"), W - padR, H - 6);
+  if (list.length > 150) html += `<div class="note">최근 150개까지 보여 줘요. 이름이나 내용으로 찾아보세요.</div>`;
+  $("call-list").innerHTML = html || `<div class="empty">${all.length ? "찾는 기록이 없어요" : "아직 통화 기록이 없어요 🙂"}</div>`;
 }
 
 /* ============================================================
@@ -1628,6 +1659,7 @@ window.loadBackup = function (input) {
       d.stocks = Array.isArray(d.stocks) ? d.stocks : [];
       d.points = Array.isArray(d.points) ? d.points : [];
       d.exercise = Array.isArray(d.exercise) ? d.exercise : [];
+      d.calls = Array.isArray(d.calls) ? d.calls : [];
       const total = KINDS.reduce((n, k) => n + d[k].length, 0);
       if (!confirm(`백업 파일의 기록 ${total}개를 내 기록에 더할까요?\n(같은 기록은 겹치지 않아요)`)) return;
       // 한 번에 400개씩 나눠서 올리기
@@ -1651,12 +1683,12 @@ window.loadBackup = function (input) {
 /* ============================================================
    ▶️ 처음 켰을 때
    ============================================================ */
-function drawAll() { drawMoney(); drawPlans(); drawBP(); drawWeight(); drawStock(); drawPoint(); drawExercise(); }
+function drawAll() { drawMoney(); drawPlans(); drawCalls(); drawWeight(); drawStock(); drawPoint(); drawExercise(); }
 
 $("m-date").value = todayStr();
 $("p-date").value = todayStr();
-$("b-date").value = todayStr();
-$("b-time").value = nowTime();
+$("c-date").value = todayStr();
+$("c-time").value = nowTime();
 $("w-date").value = todayStr();
 $("s-date").value = todayStr();
 $("pt-date").value = todayStr();
